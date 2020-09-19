@@ -1,3 +1,3 @@
-# VimJam 2020 Game Jam Entry
+# VimJam 2020 Game Jam Entry: Kepler Delivery Inc
 
-LettuceMan Studios' Entry for JimJam 2020
+## Deliver, Collect, and Dont Get Stranded; Those are the laws of space delivery guy
