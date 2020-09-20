@@ -41,14 +41,88 @@ function ratio(a1: number, a2: number, b1: number): number { // In a situation w
 function getScaleForPixel(oldSize: number, newSize: number): number { // Leftover from C++ days. Tells you the scale factor you need to scale pixels to another set of pixels.
     return ratio(oldSize, 1, newSize);
 };
-function fpsToMilliseconds(fps: number): number {
+function fpsToMilliseconds(fps: number): number { // Convert FPS to milliseconds
     return 1000 / fps;
+};
+function angle(cx: number, cy: number, ex: number, ey: number): number { // Get angle of line
+    var dy: number = ey - cy;
+    var dx: number = ex - cx;
+    var theta: number = Math.atan2(dy, dx); // range (-PI, PI]
+    theta *= 180 / Math.PI; // rads to degs, range (-180, 180]
+    return theta;
+};
+function angle360(cx: number, cy: number, ex: number, ey: number): number {  // Get angle of line (360)
+    var theta: number = angle(cx, cy, ex, ey); // range (-180, 180]
+    if (theta < 0) theta = 360 + theta; // range [0, 360)
+    return theta;
 };
 
 const canvas: HTMLCanvasElement = <HTMLCanvasElement>document.querySelector("#canvas");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
 const ctx: CanvasRenderingContext2D = canvas.getContext("2d");
+
+
+const globalSpeed: number = 3;
+const globaFriction: number = 0.85;
+const globalFPS: number = 30;
+
+
+type KeystateList = bool[];
+class Keys {
+    public static KEY_W: number = 87;
+    public static KEY_A: number = 65;
+    public static KEY_S: number = 83;
+    public static KEY_D: number = 68;
+    public static KEY_SPACE: number = 32;
+
+
+    public static state: KeystateList = [];
+    public static getState(key: number): bool {
+        return Keys.state[key];
+    };
+    
+    public static handleKeydown(e: {keyCode: number}): void {
+        Keys.state[e.keyCode] = true;
+    };
+    public static handleKeyup(e: {keyCode: number}): void {
+        delete Keys.state[e.keyCode];
+    };
+};
+document.addEventListener("keydown", Keys.handleKeydown);
+document.addEventListener("keyup", Keys.handleKeyup);
+
+class Mouse {
+    public static readonly MOUSELEFT: number = 0;
+    public static readonly MOUSEMIDDLE: number = 1;
+    public static readonly MOUSERIGHT: number = 2;
+
+    public static x: number = 0;
+    public static y: number = 0;
+    public static left: bool = false;
+    public static middle: bool = false;
+    public static right: bool = false;
+
+    public static handleMousedown(e: MouseEvent): void {
+        if (e.button === Mouse.MOUSELEFT) {
+            Mouse.left = true;
+        } else if (e.button === Mouse.MOUSEMIDDLE) {
+            Mouse.middle = true;
+        } else if (e.button === Mouse.MOUSERIGHT) {
+            Mouse.right = true;
+        };
+    };
+    public static handleMouseup(e: MouseEvent): void {
+        Mouse.left = false;
+        Mouse.middle = false;
+        Mouse.right = false;
+    };
+    public static handleMousemove(e: {pageX: number, pageY: number}): void {
+        Mouse.x = e.pageX;
+        Mouse.y = e.pageY;
+    };
+};
+document.addEventListener("mousedown", Mouse.handleMousedown);
+document.addEventListener("mouseup", Mouse.handleMouseup);
+document.addEventListener("mousemove", Mouse.handleMousemove);
 
 class Rect {
     public x: number; // X position
@@ -67,12 +141,21 @@ class Rect {
         return new Rect(this.x, this.y, this.width, this.height);
     };
 
-    public collidingWith(rect: Rect) {
+    public collidingWith(rect: Rect): bool {
         const yrect: Rect = this.toRect();
-        return yrect.x < rect.x + rect.width &&
-        yrect.x + yrect.width > rect.x &&
-        yrect.y < rect.y + rect.height &&
-        yrect.y + yrect.height > rect.y;
+        const urect: Rect = rect.toRect();
+        return yrect.x < urect.x + urect.width 
+        && yrect.x + yrect.width > urect.x 
+        && yrect.y < urect.y + urect.height 
+        && yrect.y + yrect.height > urect.y;
+    };
+    public insideOf(rect: Rect): bool {
+        const yrect: Rect = this.toRect();
+        const urect: Rect = rect.toRect();
+        return yrect.x > urect.x
+        && yrect.x + yrect.width < urect.x + urect.width
+        && yrect.y > urect.y
+        && yrect.y + yrect.height < urect.x + urect.height;
     };
 };
 
@@ -89,8 +172,57 @@ class MovingEntity extends Rect { // A generic entity
     };
 };
 
+interface AsteroidTexture {
+    src: string,
+    width: number,
+    height: number
+};
 type AsteroidType = "small" | "medium" | "large"; // The possible types of an asteroid
+type AsteroidMitosisResult = "more" | "collectable";
 class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
+    public static POSSIBLE_SPAWN_POS: {x: number, y: number, deg: number}[] = [
+        {x: canvas.width/2, y: canvas.height, deg: 0},
+        {x: canvas.width/2, y: 0, deg: 180},
+        {x: canvas.width, y: canvas.height/2, deg: 270},
+        {x: 0, y: canvas.height/2, deg: 90},
+        {x: canvas.width, y: canvas.height, deg: 315},
+        {x: 0, y: canvas.height, deg: 45},
+        {x: 0, y: 0, deg: 135},
+        {x: canvas.width, y: 0, deg: 225}
+    ];
+
+    public static SM_TEXTURES: AsteroidTexture[] = [
+        {src: "images/asteroid/sm0.png", width: 480, height: 384},
+        {src: "images/asteroid/sm1.png", width: 448, height: 320},
+        {src: "images/asteroid/sm2.png", width: 320, height: 384}
+    ];
+    public static MED_TEXTURES: AsteroidTexture[] = [
+        {src: "images/asteroid/med0.png", width: 448, height: 544},
+        {src: "images/asteroid/med1.png", width: 480, height: 512},
+        {src: "images/asteroid/med2.png", width: 544, height: 544}
+    ];
+    public static LG_TEXTURES: AsteroidTexture[] = [
+        {src: "images/asteroid/lg0.png", width: 512, height: 640},
+        {src: "images/asteroid/lg0.png", width: 640, height: 640},
+        {src: "images/asteroid/lg0.png", width: 608, height: 640}
+    ];
+
+    public static create(type: AsteroidType = "medium"): Asteroid {
+        const spawnPos: {x: number, y: number, deg: number} = Asteroid.POSSIBLE_SPAWN_POS[Math.floor(Math.random()*Asteroid.POSSIBLE_SPAWN_POS.length)];
+        let angle: number = spawnPos.deg;
+        let rand: number = Math.floor(Math.random()*3);
+        switch (rand) {
+            case 0:
+                angle += 20;
+                break;
+            case 1:
+                angle -= 20;
+            default:
+                break;
+        };
+        return new Asteroid(spawnPos.x, spawnPos.y, angle, type);
+    };
+
     public rotationSpeed: number; // Speed of rotation
     public size: number; // Size of asteroid
     public isLive: bool = true; // If the asteroids flagged for deletion
@@ -103,26 +235,46 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
         this.angle = angle % 360; // Keep angle in range of 0-359
         this.type = type;
 
+        let rand: number = Math.floor(Math.random()*3);
+        switch (rand) {
+            case 0:
+                this.rotation += 10;
+                break;
+            case 1:
+                this.rotation -= 10;
+            default:
+                break;
+        };
+
         switch (this.type) { // Change some shit based off of the asteroid type
             case "small":
                 this.size = 30;
                 this.rotationSpeed = 2.1;
-                this.speed = 1.75;
-                this.sprite = new Sprite("images/asteriod-0.png", 512, 512, 1); // Load the asteriod sprite  
+                this.speed = 1.95;
                 break;
             case "large":
                 this.size = 80;
                 this.rotationSpeed = 1.4;
-                this.speed = 0.75;
-                this.sprite = new Sprite("images/asteriod-2.png", 512, 512, 1);
+                this.speed = 0.95;
                 break;
             default: // Deafaults to medium
                 this.size = 55;
                 this.rotationSpeed = 0.7;
-                this.speed = 1.1;
-                this.sprite = new Sprite("images/asteriod-1.png", 512, 512, 1);
+                this.speed = 1.3;
                 break;
         };
+
+        if (this.type === "large") {
+            const texture: AsteroidTexture = Asteroid.LG_TEXTURES[Math.floor(Math.random()*Asteroid.LG_TEXTURES.length)];
+            this.sprite = new Sprite(texture.src, texture.width, texture.height, 1); // Load the asteriod sprite
+        } else if (this.type === "small") {
+            const texture: AsteroidTexture = Asteroid.SM_TEXTURES[Math.floor(Math.random()*Asteroid.SM_TEXTURES.length)];
+            this.sprite = new Sprite(texture.src, texture.width, texture.height, 1); // Load the asteriod sprite
+        } else {
+            const texture: AsteroidTexture = Asteroid.MED_TEXTURES[Math.floor(Math.random()*Asteroid.MED_TEXTURES.length)];
+            this.sprite = new Sprite(texture.src, texture.width, texture.height, 1); // Load the asteriod sprite
+        };
+        
 
         // Get the movement direction increments;
         this.dx = this.speed * Math.sin(rad(angle));
@@ -144,16 +296,16 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
         this.rotation = this.rotation % 360;
     };
     public draw(ctx: CanvasRenderingContext2D): void {
-        this.sprite.rotation = this.rotation;
-        this.sprite.draw(ctx, this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+        this.sprite.rotation = Math.floor(this.rotation);
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
     };
+    
 
-
-    public mitosis(): Asteroid[] { // Get children of explosion
+    public mitosis(angle: number): Asteroid[] { // Get children of explosion
 
         // Get children movement direction
-        let leftAngle: number = this.angle - 90;
-        let rightAngle: number = this.angle + 90;
+        let leftAngle: number = angle - 90;
+        let rightAngle: number = angle + 90;
         if (leftAngle < 0) leftAngle = 360 + leftAngle;
         if (rightAngle >= 360) rightAngle = rightAngle - 360;
 
@@ -168,7 +320,7 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
             final.push(new Asteroid(this.x, this.y, rightAngle, "small"));
         }
         else if (this.type === "small") {
-            final.push(new Asteroid(this.x, this.y, this.angle, "small"));
+            final.push(new Asteroid(this.x, this.y, angle, "small"));
             final[final.length-1].rotation = this.rotation;
         };
 
@@ -178,53 +330,255 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
     };
 
     public toRect(): Rect {
+        return new Rect(this.x - (this.size/2), this.y - (this.size/2), this.size, this.size);
+    };
+};
+
+class Projectile extends Rect  {
+    public angle: number = 0;
+    public dx: number = 0;
+    public dy: number = 0;
+    public sprite: Sprite;
+    public speed: number = 24;
+    constructor(x: number, y: number, angle: number) {
+        super(x, y, 35, 35);
+        this.angle = angle;
+        this.sprite = new Sprite("images/projectile.png", 224, 256, 2);
+        this.sprite.rotation = this.angle;
+        this.dx = this.speed * Math.sin(rad(angle));
+        this.dy = this.speed * -Math.cos(rad(angle));
+    };
+    public update() {
+        this.x += this.dx;
+        this.y += this.dy;
+    };
+    public draw(ctx: CanvasRenderingContext2D): void {
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+    };
+    public toRect(): Rect {
         return new Rect(this.x - (this.width/2), this.y - (this.height/2), this.width, this.height);
     };
 };
 
-let cameraRect: Rect = new Rect(0, 0, canvas.width, canvas.height);
+interface PlayerSprites {
+    still: number,
+    active: number
+};
+class Player extends MovingEntity {
+    public static SPRITEMAP: PlayerSprites = {
+        still: 0,
+        active: 1
+    };
 
+    public coins: number = 0;
+    public sprites: Sprite[] = [];
+    public flashSprite: Sprite;
+    public projectiles: Projectile[] = [];
+    public readonly speed: number = 3;
+    public readonly rotationSpeed: number = 5;
+    public dashCooldownTimer: number = 0;
+    public readonly dashCooldown: number = globalFPS * 2;
+    public fireCooldownTimer: number = 0;
+    public readonly fireCooldown: number = globalFPS * 0.5;
+
+    public dx: number = 0;
+    public dy: number = 0;
+    public flashX: number = 0;
+    public flashY: number = 0;
+
+    public vx: number = 0;
+    public vy: number = 0;
+    public rotv: number = 0;
+    
+    public readonly rotFriction: number = 0.7;
+
+    constructor() {
+        super(canvas.width/2, canvas.height/2);
+        this.width = 70;
+        this.height = 70;
+        this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 1024, 1024, 1, 0);
+        this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 1024, 1024, 4, 1);
+        this.dx = this.speed * Math.sin(rad(this.rotation));
+        this.dy = this.speed * -Math.cos(rad(this.rotation));
+    };
+
+    public fire() {
+        this.projectiles.push(new Projectile(this.x, this.y, this.rotation));
+    };
+
+    public input(): void {
+        if (Keys.getState(Keys.KEY_W)) {
+            this.dx = this.speed * Math.sin(rad(this.rotation));
+            this.dy = this.speed * -Math.cos(rad(this.rotation));
+            this.vx += this.dx;
+            this.vy += this.dy;
+        };
+        if (Keys.getState(Keys.KEY_A)) {
+            this.rotv -= this.rotationSpeed;
+        };
+        if (Keys.getState(Keys.KEY_S)) {
+            this.dx = -(this.speed/3) * Math.sin(rad(this.rotation));
+            this.dy = -(this.speed/3) * -Math.cos(rad(this.rotation));
+            this.vx += this.dx;
+            this.vy += this.dy;
+        };
+        if (Keys.getState(Keys.KEY_D)) {
+            this.rotv += this.rotationSpeed;
+        };
+        if (Keys.getState(Keys.KEY_SPACE)) {
+            if (this.dashCooldownTimer <= 0) {
+                this.dx = this.speed * Math.sin(rad(this.rotation));
+                this.dy = this.speed * -Math.cos(rad(this.rotation));
+                this.flashX = this.x;
+                this.flashY = this.y;
+                this.vx += this.dx*24;
+                this.vy += this.dy*24;
+                this.dashCooldownTimer = this.dashCooldown;
+            };
+        };
+        if (Mouse.left) {
+            if (this.fireCooldownTimer <= 0) {
+                this.fire();
+                this.fireCooldownTimer = this.fireCooldown
+            };
+        };
+    };
+
+    public update(): void {
+        this.liveTime++;
+
+        this.dashCooldownTimer--;
+        this.fireCooldownTimer--;
+        this.input();
+
+        this.rotv *= this.rotFriction;
+        this.rotation += this.rotv;
+        this.rotation = this.rotation % 360; 
+        if (this.rotation < 0) this.rotation = 360 + this.rotation;
+
+        this.vx *= globaFriction;
+        this.vy *= globaFriction;
+
+        if (this.vx >= 0.1) {
+            for (let i = 0.1; i < this.vx; i++) {
+                this.x++;
+                if (!this.insideOf(cameraRect)) {
+                    this.x--;
+                    this.vx = 0;
+                };
+            };
+        };
+        if (this.vx < -0.1) {
+            for (let i = this.vx; i < -0.1; i++) {
+                this.x--;
+                if (!this.insideOf(cameraRect)) {
+                    this.x++;
+                    this.vx = 0;
+                };
+            };
+        };
+        if (this.vy >= 0.1) {
+            for (let i = 0.1; i < this.vy; i++) {
+                this.y++;
+                if (!this.insideOf(cameraRect)) {
+                    this.y--;
+                    this.vy = 0;
+                };
+            };
+        };
+        if (this.vy < -0.1) {
+            for (let i = this.vy; i < -0.1; i++) {
+                this.y--;
+                if (!this.insideOf(cameraRect)) {
+                    this.y++;
+                    this.vy = 0;
+                };
+            };
+        };
+        
+        for (let i: number = 0; i < this.projectiles.length; i++) {
+            if (this.projectiles[i] == null) continue;
+            this.projectiles[i].update();
+            if (!cameraRect.collidingWith(player.projectiles[i])) delete this.projectiles[i];
+        };
+    };
+    public draw(ctx: CanvasRenderingContext2D): void {
+        if ((this.vx > this.speed*1.8 || this.vy > this.speed*1.8) || (this.vx < -this.speed*1.8 || this.vy < -this.speed*1.8)) {
+            this.sprites[Player.SPRITEMAP.active].rotation = this.rotation;
+            this.sprites[Player.SPRITEMAP.active].draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        } else {
+            this.sprites[Player.SPRITEMAP.still].rotation = this.rotation;
+            this.sprites[Player.SPRITEMAP.still].draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        };
+    };
+
+
+    public toRect(): Rect {
+        return new Rect(this.x - (this.width/2), this.y - (this.height/2), this.width, this.height);
+    };
+};
+
+
+class Collectable extends Rect {
+    public sprite: Sprite;
+
+    constructor(x: number, y: number, width: number, height: number) {
+        super(x, y, width, height);
+    };
+};
+
+class Coin extends Collectable {
+
+};
+
+const cameraRect: Rect = new Rect(0, 0, canvas.width, canvas.height);
+
+const player = new Player();
 const asteroids: Asteroid[] = []; // All the asteroids
-asteroids.push(new Asteroid(canvas.width/2, canvas.height/2 - 90, 0, "large"));
-asteroids.push(new Asteroid(canvas.width/2 + 45, canvas.height/2 - 45, 45, "large"));
-asteroids.push(new Asteroid(canvas.width/2 + 90, canvas.height/2, 90, "large"));
-asteroids.push(new Asteroid(canvas.width/2 + 45, canvas.height/2 + 45, 135, "large"));
-asteroids.push(new Asteroid(canvas.width/2, canvas.height/2 + 90, 180, "large"));
-asteroids.push(new Asteroid(canvas.width/2 - 45, canvas.height/2 + 45, 225, "large"));
-asteroids.push(new Asteroid(canvas.width/2 - 90, canvas.height/2, 270, "large"));
-asteroids.push(new Asteroid(canvas.width/2 - 45, canvas.height/2 - 45, 315, "large"));
-
+asteroids.push(Asteroid.create("large"));
+asteroids.push(Asteroid.create("large"));
+asteroids.push(Asteroid.create("large"));
+asteroids.push(Asteroid.create("large"));
 
 function render(): void { // Main render loop
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    ctx.save();
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i: number = 0; i < player.projectiles.length; i++) {
+        if (player.projectiles[i] == null) continue;
+        player.projectiles[i].draw(ctx);
+    };
     for (let i: number = 0; i < asteroids.length; i++) {
-        // if (asteroids[i+1] == null && asteroids[i+10] == null) i += 10;
         if (asteroids[i] == null) continue;
         asteroids[i].draw(ctx);
     };
-    ctx.restore();
+    player.draw(ctx);
     requestAnimationFrame(render);
 };
 render();
 
 function update(): void { // Main update loop
-    cameraRect = new Rect(0, 0, canvas.width, canvas.height);
     for (let i: number = 0; i < asteroids.length; i++) {
         if (asteroids[i] == null) continue;
         asteroids[i].update();
-        if (asteroids[i].liveTime > 120) {
-            const newAsteroids: Asteroid[] = asteroids[i].mitosis();
+        if (!cameraRect.collidingWith(asteroids[i])) {
             delete asteroids[i];
-            newAsteroids.forEach(e => {
-                asteroids.push(e);
-            });
+            continue;
         };
-        //if (cameraRect.collidingWith(asteroids[i]) === false) delete asteroids[i];
+        for (let k: number = 0; k < player.projectiles.length; k++) {
+            if (player.projectiles[k] == null) continue;
+            if (asteroids[i].collidingWith(player.projectiles[k])) {
+                const newAst: Asteroid[] = asteroids[i].mitosis(player.projectiles[k].angle);
+                newAst.forEach((e: Asteroid) => {
+                    asteroids.push(e);
+                });
+                delete asteroids[i];
+                delete player.projectiles[k];
+                continue;
+            };
+        };
+        
     };
+    player.update();
 };
 
-setInterval(update, fpsToMilliseconds(30));
+setInterval(update, fpsToMilliseconds(globalFPS));

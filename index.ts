@@ -1,4 +1,5 @@
 const {app, BrowserWindow} = require("electron");
+//import {app, BrowserWindow} from "electron";
 let win = null;
 
 app.on("ready", _ => {
@@ -8,6 +9,8 @@ app.on("ready", _ => {
         webPreferences: {
             nodeIntegration: true
         },
+        icon: "app/images/icon.png",
+        resizable: false
     });
     win.setMenuBarVisibility(false);
     win.loadFile('app/index.html');
