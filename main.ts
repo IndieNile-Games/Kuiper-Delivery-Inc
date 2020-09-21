@@ -16,7 +16,7 @@ type bool = boolean; // I'm used to typing "bool", and I will never not be used 
 
 // Interfaces for LMS Canvas. I won't explain them here.
 interface SpriteConstructor {
-    new (src: string, frameWidth: number, frameHeight: number, frameCount: number, frameStart?: number),
+    new (src: string, frameWidth: number, frameHeight: number, frameCount: number, frameStart?: number): Sprite,
 };
 interface Sprite {
     image: HTMLImageElement,
@@ -207,7 +207,7 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
         {src: "images/asteroid/lg0.png", width: 608, height: 640}
     ];
 
-    public static create(type: AsteroidType = "medium"): Asteroid {
+    public static create(type?: AsteroidType): Asteroid {
         const spawnPos: {x: number, y: number, deg: number} = Asteroid.POSSIBLE_SPAWN_POS[Math.floor(Math.random()*Asteroid.POSSIBLE_SPAWN_POS.length)];
         let angle: number = spawnPos.deg;
         let rand: number = Math.floor(Math.random()*3);
@@ -220,7 +220,12 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
             default:
                 break;
         };
-        return new Asteroid(spawnPos.x, spawnPos.y, angle, type);
+        const types: AsteroidType[] = ["small", "medium", "large"];
+        if (type) {
+            return new Asteroid(spawnPos.x, spawnPos.y, angle, type);
+        } else {
+            return new Asteroid(spawnPos.x, spawnPos.y, angle, types[Math.floor(Math.random()*types.length)])
+        };
     };
 
     public rotationSpeed: number; // Speed of rotation
@@ -396,8 +401,8 @@ class Player extends MovingEntity {
         super(canvas.width/2, canvas.height/2);
         this.width = 70;
         this.height = 70;
-        this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 1024, 1024, 1, 0);
-        this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 1024, 1024, 4, 1);
+        this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 128, 128, 1, 0);
+        this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 128, 128, 4, 1);
         this.dx = this.speed * Math.sin(rad(this.rotation));
         this.dy = this.speed * -Math.cos(rad(this.rotation));
     };
@@ -531,18 +536,72 @@ class Coin extends Collectable {
 
 };
 
+class DrawableText extends Rect {
+    public text: string;
+    
+    constructor(text: string, x: number, y: number) {
+        super(x, y);
+        this.text = text;
+    };
+
+    public draw(ctx: CanvasRenderingContext2D): void {
+
+    };
+};
+
+class Backdrop extends Rect {
+    public sprite: Sprite;
+    public speed: number;
+    public readonly width: number = canvas.width;
+    public readonly height: number = canvas.height;
+
+    constructor(src: string, width: number, height: number, speed: number, spriteIndex: number = 0, startX: number = 0) {
+        super(startX, 0);
+        this.sprite = new Sprite(src, width, height, 1, spriteIndex);
+        this.speed = speed;
+    };
+
+    public update(): void {
+        this.x -= this.speed;
+        if (this.x <= -this.width) {
+            this.x = this.width*2;
+        };
+    };
+
+    public draw(ctx: CanvasRenderingContext2D): void {
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height)
+    };
+};
+
 const cameraRect: Rect = new Rect(0, 0, canvas.width, canvas.height);
 
 const player = new Player();
-const asteroids: Asteroid[] = []; // All the asteroids
-asteroids.push(Asteroid.create("large"));
-asteroids.push(Asteroid.create("large"));
-asteroids.push(Asteroid.create("large"));
-asteroids.push(Asteroid.create("large"));
+const asteroids: Asteroid[] = [
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create()
+]; // All the asteroids
+
+const backdropStar: Backdrop[] = [
+    new Backdrop("images/stars.png", 800, 600, 1, 0, 0),
+    new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width),
+    new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width*2),
+    new Backdrop("images/stars.png", 800, 600, 2, 1, 0),
+    new Backdrop("images/stars.png", 800, 600, 2, 1, canvas.width),
+    new Backdrop("images/stars.png", 800, 600, 2, 1, canvas.width*2)
+];
 
 function render(): void { // Main render loop
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i: number = 0; i < backdropStar.length; i++) {
+        backdropStar[i].draw(ctx);
+    };
     for (let i: number = 0; i < player.projectiles.length; i++) {
         if (player.projectiles[i] == null) continue;
         player.projectiles[i].draw(ctx);
@@ -557,6 +616,9 @@ function render(): void { // Main render loop
 render();
 
 function update(): void { // Main update loop
+    for (let i: number = 0; i < backdropStar.length; i++) {
+        backdropStar[i].update();
+    };
     for (let i: number = 0; i < asteroids.length; i++) {
         if (asteroids[i] == null) continue;
         asteroids[i].update();

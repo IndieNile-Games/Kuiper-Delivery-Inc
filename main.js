@@ -205,7 +205,7 @@ class Asteroid extends MovingEntity {
         this.dx = this.speed * Math.sin(rad(angle));
         this.dy = this.speed * -Math.cos(rad(angle));
     }
-    static create(type = "medium") {
+    static create(type) {
         const spawnPos = Asteroid.POSSIBLE_SPAWN_POS[Math.floor(Math.random() * Asteroid.POSSIBLE_SPAWN_POS.length)];
         let angle = spawnPos.deg;
         let rand = Math.floor(Math.random() * 3);
@@ -219,7 +219,14 @@ class Asteroid extends MovingEntity {
                 break;
         }
         ;
-        return new Asteroid(spawnPos.x, spawnPos.y, angle, type);
+        const types = ["small", "medium", "large"];
+        if (type) {
+            return new Asteroid(spawnPos.x, spawnPos.y, angle, type);
+        }
+        else {
+            return new Asteroid(spawnPos.x, spawnPos.y, angle, types[Math.floor(Math.random() * types.length)]);
+        }
+        ;
     }
     ;
     ;
@@ -349,8 +356,8 @@ class Player extends MovingEntity {
         this.rotFriction = 0.7;
         this.width = 70;
         this.height = 70;
-        this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 1024, 1024, 1, 0);
-        this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 1024, 1024, 4, 1);
+        this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 128, 128, 1, 0);
+        this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 128, 128, 4, 1);
         this.dx = this.speed * Math.sin(rad(this.rotation));
         this.dy = this.speed * -Math.cos(rad(this.rotation));
     }
@@ -507,16 +514,67 @@ class Collectable extends Rect {
 class Coin extends Collectable {
 }
 ;
+class DrawableText extends Rect {
+    constructor(text, x, y) {
+        super(x, y);
+        this.text = text;
+    }
+    ;
+    draw(ctx) {
+    }
+    ;
+}
+;
+class Backdrop extends Rect {
+    constructor(src, width, height, speed, spriteIndex = 0, startX = 0) {
+        super(startX, 0);
+        this.width = canvas.width;
+        this.height = canvas.height;
+        this.sprite = new Sprite(src, width, height, 1, spriteIndex);
+        this.speed = speed;
+    }
+    ;
+    update() {
+        this.x -= this.speed;
+        if (this.x <= -this.width) {
+            this.x = this.width * 2;
+        }
+        ;
+    }
+    ;
+    draw(ctx) {
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+    }
+    ;
+}
+;
 const cameraRect = new Rect(0, 0, canvas.width, canvas.height);
 const player = new Player();
-const asteroids = []; // All the asteroids
-asteroids.push(Asteroid.create("large"));
-asteroids.push(Asteroid.create("large"));
-asteroids.push(Asteroid.create("large"));
-asteroids.push(Asteroid.create("large"));
+const asteroids = [
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create(),
+    Asteroid.create()
+]; // All the asteroids
+const backdropStar = [
+    new Backdrop("images/stars.png", 800, 600, 1, 0, 0),
+    new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width),
+    new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width * 2),
+    new Backdrop("images/stars.png", 800, 600, 2, 1, 0),
+    new Backdrop("images/stars.png", 800, 600, 2, 1, canvas.width),
+    new Backdrop("images/stars.png", 800, 600, 2, 1, canvas.width * 2)
+];
 function render() {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < backdropStar.length; i++) {
+        backdropStar[i].draw(ctx);
+    }
+    ;
     for (let i = 0; i < player.projectiles.length; i++) {
         if (player.projectiles[i] == null)
             continue;
@@ -535,6 +593,10 @@ function render() {
 ;
 render();
 function update() {
+    for (let i = 0; i < backdropStar.length; i++) {
+        backdropStar[i].update();
+    }
+    ;
     for (let i = 0; i < asteroids.length; i++) {
         if (asteroids[i] == null)
             continue;
