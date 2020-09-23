@@ -1,0 +1,23 @@
+* {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, Helvetica, sans-serif;
+}
+body {
+    background: #0f0f0f
+}
+canvas#canvas {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+}
+div.devMenu {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    min-width: 100px;
+}

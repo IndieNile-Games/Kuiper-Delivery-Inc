@@ -42,6 +42,17 @@ function angle360(cx, cy, ex, ey) {
     return theta;
 }
 ;
+function weightedRandom(weight, num) {
+    let n = Math.floor(Math.random() * 100);
+    let amt = 0;
+    for (let i = 0; i < weight.length; i++) {
+        amt += weight[i];
+        if (n < amt)
+            return num[i];
+    }
+    ;
+}
+;
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const globalSpeed = 3;
@@ -105,9 +116,9 @@ Mouse.left = false;
 Mouse.middle = false;
 Mouse.right = false;
 ;
-document.addEventListener("mousedown", Mouse.handleMousedown);
-document.addEventListener("mouseup", Mouse.handleMouseup);
-document.addEventListener("mousemove", Mouse.handleMousemove);
+canvas.addEventListener("mousedown", Mouse.handleMousedown);
+canvas.addEventListener("mouseup", Mouse.handleMouseup);
+canvas.addEventListener("mousemove", Mouse.handleMousemove);
 class Rect {
     constructor(x, y, width = 0, height = 0) {
         this.x = x;
@@ -149,6 +160,16 @@ class MovingEntity extends Rect {
     ;
 }
 ;
+const getCollectableType = function () {
+    const toGen = weightedRandom([5], [0]);
+    switch (toGen) {
+        case 0:
+            return "letter";
+        default:
+            return "none";
+    }
+    ;
+};
 ;
 class Asteroid extends MovingEntity {
     constructor(x, y, angle, type = "medium") {
@@ -174,17 +195,17 @@ class Asteroid extends MovingEntity {
             case "small":
                 this.size = 30;
                 this.rotationSpeed = 2.1;
-                this.speed = 1.95;
+                this.speed = 2.2;
                 break;
             case "large":
                 this.size = 80;
                 this.rotationSpeed = 1.4;
-                this.speed = 0.95;
+                this.speed = 1;
                 break;
             default: // Deafaults to medium
                 this.size = 55;
                 this.rotationSpeed = 0.7;
-                this.speed = 1.3;
+                this.speed = 1.6;
                 break;
         }
         ;
@@ -246,7 +267,17 @@ class Asteroid extends MovingEntity {
         this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
     }
     ;
-    mitosis(angle) {
+    mitosisType() {
+        if (this.type == "large" || this.type == "medium") {
+            return "more";
+        }
+        else {
+            return "collectable";
+        }
+        ;
+    }
+    ;
+    mitosisAsteroid(angle) {
         // Get children movement direction
         let leftAngle = angle - 90;
         let rightAngle = angle + 90;
@@ -273,6 +304,19 @@ class Asteroid extends MovingEntity {
         return final;
     }
     ;
+    mitosisCollectable() {
+        const final = [];
+        const toGen = getCollectableType();
+        switch (toGen) {
+            case "letter":
+                final.push();
+                break;
+            default:
+                break;
+        }
+        return final;
+    }
+    ;
     toRect() {
         return new Rect(this.x - (this.size / 2), this.y - (this.size / 2), this.size, this.size);
     }
@@ -289,14 +333,14 @@ Asteroid.POSSIBLE_SPAWN_POS = [
     { x: canvas.width, y: 0, deg: 225 }
 ];
 Asteroid.SM_TEXTURES = [
-    { src: "images/asteroid/sm0.png", width: 480, height: 384 },
-    { src: "images/asteroid/sm1.png", width: 448, height: 320 },
-    { src: "images/asteroid/sm2.png", width: 320, height: 384 }
+    { src: "images/asteroid/sm0.png", width: 60, height: 48 },
+    { src: "images/asteroid/sm1.png", width: 56, height: 40 },
+    { src: "images/asteroid/sm2.png", width: 36, height: 42 }
 ];
 Asteroid.MED_TEXTURES = [
     { src: "images/asteroid/med0.png", width: 448, height: 544 },
     { src: "images/asteroid/med1.png", width: 480, height: 512 },
-    { src: "images/asteroid/med2.png", width: 544, height: 544 }
+    { src: "images/asteroid/med2.png", width: 72, height: 72 }
 ];
 Asteroid.LG_TEXTURES = [
     { src: "images/asteroid/lg0.png", width: 512, height: 640 },
@@ -305,18 +349,28 @@ Asteroid.LG_TEXTURES = [
 ];
 ;
 class Projectile extends Rect {
-    constructor(x, y, angle) {
+    constructor(x, y, angle, sprite) {
         super(x, y, 35, 35);
         this.angle = 0;
         this.dx = 0;
         this.dy = 0;
         this.speed = 24;
         this.angle = angle;
-        this.sprite = new Sprite("images/projectile.png", 224, 256, 2);
+        this.sprite = sprite;
         this.sprite.rotation = this.angle;
         this.dx = this.speed * Math.sin(rad(angle));
         this.dy = this.speed * -Math.cos(rad(angle));
     }
+    static create(x, y, angle, type) {
+        switch (type) {
+            case "tri":
+                return new Projectile(x, y, angle, new Sprite("images/projectile1.png", 280, 320, 2));
+            default:
+                return new Projectile(x, y, angle, new Sprite("images/projectile0.png", 280, 320, 2));
+        }
+        ;
+    }
+    ;
     ;
     update() {
         this.x += this.dx;
@@ -334,9 +388,18 @@ class Projectile extends Rect {
 }
 ;
 ;
+;
 class Player extends MovingEntity {
     constructor() {
         super(canvas.width / 2, canvas.height / 2);
+        this.collectables = {
+            dash: [],
+            shotgun: []
+        };
+        this.possibleCollectables = {
+            dash: ["d", "a", "s", "h"],
+            shotgun: ["s", "h", "o", "t", "g", "u", "n"]
+        };
         this.coins = 0;
         this.sprites = [];
         this.projectiles = [];
@@ -344,6 +407,7 @@ class Player extends MovingEntity {
         this.rotationSpeed = 5;
         this.dashCooldownTimer = 0;
         this.dashCooldown = globalFPS * 2;
+        this.dashMultiplyer = 12;
         this.fireCooldownTimer = 0;
         this.fireCooldown = globalFPS * 0.5;
         this.dx = 0;
@@ -363,7 +427,93 @@ class Player extends MovingEntity {
     }
     ;
     fire() {
-        this.projectiles.push(new Projectile(this.x, this.y, this.rotation));
+        if (this.hasShotgun()) {
+            let leftAngle = this.rotation - 10;
+            let rightAngle = this.rotation + 10;
+            if (leftAngle < 0)
+                leftAngle = 360 + leftAngle;
+            if (rightAngle >= 360)
+                rightAngle = rightAngle - 360;
+            this.projectiles.push(Projectile.create(this.x, this.y, leftAngle, "tri"));
+            this.projectiles.push(Projectile.create(this.x, this.y, this.rotation, "tri"));
+            this.projectiles.push(Projectile.create(this.x, this.y, rightAngle, "tri"));
+        }
+        else {
+            this.projectiles.push(Projectile.create(this.x, this.y, this.rotation, "single"));
+        }
+        ;
+    }
+    ;
+    hasDash() {
+        let finalState = {
+            d: false,
+            a: false,
+            s: false,
+            h: false
+        };
+        for (let i = 0; i < this.collectables.dash.length; i++) {
+            switch (this.collectables.dash[i]) {
+                case "d":
+                    finalState.d = true;
+                    break;
+                case "a":
+                    finalState.a = true;
+                    break;
+                case "s":
+                    finalState.s = true;
+                    break;
+                case "h":
+                    finalState.h = true;
+                    break;
+                default:
+                    break;
+            }
+            ;
+        }
+        ;
+        return finalState.d && finalState.a && finalState.s && finalState.h;
+    }
+    ;
+    hasShotgun() {
+        let finalState = {
+            s: false,
+            h: false,
+            o: false,
+            t: false,
+            g: false,
+            u: false,
+            n: false
+        };
+        for (let i = 0; i < this.collectables.shotgun.length; i++) {
+            switch (this.collectables.shotgun[i]) {
+                case "s":
+                    finalState.s = true;
+                    break;
+                case "h":
+                    finalState.h = true;
+                    break;
+                case "o":
+                    finalState.o = true;
+                    break;
+                case "t":
+                    finalState.t = true;
+                    break;
+                case "g":
+                    finalState.g = true;
+                    break;
+                case "u":
+                    finalState.u = true;
+                    break;
+                case "n":
+                    finalState.n = true;
+                    break;
+                default:
+                    break;
+            }
+            ;
+        }
+        ;
+        return finalState.s && finalState.h && finalState.o && finalState.t && finalState.g && finalState.u && finalState.n;
     }
     ;
     input() {
@@ -389,14 +539,14 @@ class Player extends MovingEntity {
             this.rotv += this.rotationSpeed;
         }
         ;
-        if (Keys.getState(Keys.KEY_SPACE)) {
+        if (Keys.getState(Keys.KEY_SPACE) && this.hasDash()) {
             if (this.dashCooldownTimer <= 0) {
                 this.dx = this.speed * Math.sin(rad(this.rotation));
                 this.dy = this.speed * -Math.cos(rad(this.rotation));
                 this.flashX = this.x;
                 this.flashY = this.y;
-                this.vx += this.dx * 24;
-                this.vy += this.dy * 24;
+                this.vx += this.dx * this.dashMultiplyer;
+                this.vy += this.dy * this.dashMultiplyer;
                 this.dashCooldownTimer = this.dashCooldown;
             }
             ;
@@ -424,8 +574,8 @@ class Player extends MovingEntity {
             this.rotation = 360 + this.rotation;
         this.vx *= globaFriction;
         this.vy *= globaFriction;
-        if (this.vx >= 0.1) {
-            for (let i = 0.1; i < this.vx; i++) {
+        if (this.vx >= 0.2) {
+            for (let i = 0.2; i < this.vx; i++) {
                 this.x++;
                 if (!this.insideOf(cameraRect)) {
                     this.x--;
@@ -436,8 +586,8 @@ class Player extends MovingEntity {
             ;
         }
         ;
-        if (this.vx < -0.1) {
-            for (let i = this.vx; i < -0.1; i++) {
+        if (this.vx < -0.2) {
+            for (let i = this.vx; i < -0.2; i++) {
                 this.x--;
                 if (!this.insideOf(cameraRect)) {
                     this.x++;
@@ -448,8 +598,8 @@ class Player extends MovingEntity {
             ;
         }
         ;
-        if (this.vy >= 0.1) {
-            for (let i = 0.1; i < this.vy; i++) {
+        if (this.vy >= 0.2) {
+            for (let i = 0.2; i < this.vy; i++) {
                 this.y++;
                 if (!this.insideOf(cameraRect)) {
                     this.y--;
@@ -460,8 +610,8 @@ class Player extends MovingEntity {
             ;
         }
         ;
-        if (this.vy < -0.1) {
-            for (let i = this.vy; i < -0.1; i++) {
+        if (this.vy < -0.2) {
+            for (let i = this.vy; i < -0.2; i++) {
                 this.y--;
                 if (!this.insideOf(cameraRect)) {
                     this.y++;
@@ -505,13 +655,39 @@ Player.SPRITEMAP = {
 };
 ;
 class Collectable extends Rect {
-    constructor(x, y, width, height) {
+    constructor(x, y, width, height, name, value, sprite) {
         super(x, y, width, height);
+        this.sprite = sprite;
+        this.name = name;
+        this.value = value;
     }
     ;
 }
 ;
-class Coin extends Collectable {
+;
+/*
+const collectableLetterSprites: CollectableLetterSprites = {
+    dash: {
+
+    },
+    laser: {
+
+    }
+};
+*/
+class CollectableLetter extends Collectable {
+    static createRandom(x, y) {
+        const possibleNames = Object.keys(player.collectables);
+        const name = possibleNames[Math.floor(Math.random() * possibleNames.length)];
+        const possibleValues = player.possibleCollectables[name];
+        const value = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+        return new CollectableLetter(x, y, name, value, new Sprite("image/ship-zoom.png", 128, 128, 1, 0));
+    }
+    ;
+    constructor(x, y, name, value, sprite) {
+        super(x, y, 50, 50, name, value, sprite);
+    }
+    ;
 }
 ;
 class DrawableText extends Rect {
@@ -543,12 +719,34 @@ class Backdrop extends Rect {
     }
     ;
     draw(ctx) {
-        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height - 60);
     }
     ;
 }
 ;
-const cameraRect = new Rect(0, 0, canvas.width, canvas.height);
+class UIElement extends Rect {
+    constructor(sprite, x, y, width, height, update) {
+        super(x, y, width, height);
+        this.state = 0;
+        this.drawFrames = [];
+        this.update = () => { };
+        this.sprite = sprite;
+        this.update = update;
+    }
+    ;
+    draw(ctx) {
+        this.update();
+        for (let i = 0; i < this.drawFrames.length; i++) {
+            this.sprite.currentFrame = this.drawFrames[i];
+            this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        }
+        ;
+        this.drawFrames = [];
+    }
+    ;
+}
+;
+const cameraRect = new Rect(0, 0, canvas.width, canvas.height - 60);
 const player = new Player();
 const asteroids = [
     Asteroid.create(),
@@ -567,6 +765,172 @@ const backdropStar = [
     new Backdrop("images/stars.png", 800, 600, 2, 1, 0),
     new Backdrop("images/stars.png", 800, 600, 2, 1, canvas.width),
     new Backdrop("images/stars.png", 800, 600, 2, 1, canvas.width * 2)
+];
+const dashUpgradeUpdate = function () {
+    let finalState = {
+        d: false,
+        a: false,
+        s: false,
+        h: false
+    };
+    for (let i = 0; i < player.collectables.dash.length; i++) {
+        switch (player.collectables.dash[i]) {
+            case "d":
+                finalState.d = true;
+                break;
+            case "a":
+                finalState.a = true;
+                break;
+            case "s":
+                finalState.s = true;
+                break;
+            case "h":
+                finalState.h = true;
+                break;
+            default:
+                break;
+        }
+    }
+    ;
+    if (finalState.d && finalState.a && finalState.s && finalState.h) {
+        this.drawFrames.push(9);
+    }
+    else {
+        this.drawFrames.push(0);
+        if (finalState.d) {
+            this.drawFrames.push(2);
+        }
+        else {
+            this.drawFrames.push(1);
+        }
+        ;
+        if (finalState.a) {
+            this.drawFrames.push(4);
+        }
+        else {
+            this.drawFrames.push(3);
+        }
+        ;
+        if (finalState.s) {
+            this.drawFrames.push(6);
+        }
+        else {
+            this.drawFrames.push(5);
+        }
+        ;
+        if (finalState.h) {
+            this.drawFrames.push(8);
+        }
+        else {
+            this.drawFrames.push(7);
+        }
+        ;
+    }
+    ;
+};
+const shotgunUpgradeUpdate = function () {
+    let finalState = {
+        s: false,
+        h: false,
+        o: false,
+        t: false,
+        g: false,
+        u: false,
+        n: false
+    };
+    for (let i = 0; i < player.collectables.shotgun.length; i++) {
+        switch (player.collectables.shotgun[i]) {
+            case "s":
+                finalState.s = true;
+                break;
+            case "h":
+                finalState.h = true;
+                break;
+            case "o":
+                finalState.o = true;
+                break;
+            case "t":
+                finalState.t = true;
+                break;
+            case "g":
+                finalState.g = true;
+                break;
+            case "u":
+                finalState.u = true;
+                break;
+            case "n":
+                finalState.n = true;
+                break;
+            default:
+                break;
+        }
+        ;
+    }
+    ;
+    if (player.hasShotgun()) {
+        this.drawFrames.push(15);
+    }
+    else {
+        this.drawFrames.push(0);
+        if (finalState.s) {
+            this.drawFrames.push(2);
+        }
+        else {
+            this.drawFrames.push(1);
+        }
+        ;
+        if (finalState.h) {
+            this.drawFrames.push(4);
+        }
+        else {
+            this.drawFrames.push(3);
+        }
+        ;
+        if (finalState.o) {
+            this.drawFrames.push(6);
+        }
+        else {
+            this.drawFrames.push(5);
+        }
+        ;
+        if (finalState.t) {
+            this.drawFrames.push(8);
+        }
+        else {
+            this.drawFrames.push(7);
+        }
+        ;
+        if (finalState.g) {
+            this.drawFrames.push(10);
+        }
+        else {
+            this.drawFrames.push(9);
+        }
+        ;
+        if (finalState.u) {
+            this.drawFrames.push(12);
+        }
+        else {
+            this.drawFrames.push(11);
+        }
+        ;
+        if (finalState.n) {
+            this.drawFrames.push(14);
+        }
+        else {
+            this.drawFrames.push(13);
+        }
+        ;
+    }
+    ;
+};
+const bottomBarUIUpdate = function () {
+    this.drawFrames = [0];
+};
+const uiElements = [
+    new UIElement(new Sprite("images/bottombar.png", 960, 72, 1, 0), 0, 540, 800, 60, bottomBarUIUpdate),
+    new UIElement(new Sprite("images/upgrade/dash.png", 170, 50, 10), 15, 555, 102, 30, dashUpgradeUpdate),
+    new UIElement(new Sprite("images/upgrade/shotgun.png", 290, 50, 10), 124.5, 555, 174, 30, shotgunUpgradeUpdate)
 ];
 function render() {
     ctx.fillStyle = "#000000";
@@ -588,6 +952,10 @@ function render() {
     }
     ;
     player.draw(ctx);
+    for (let i = 0; i < uiElements.length; i++) {
+        uiElements[i].draw(ctx);
+    }
+    ;
     requestAnimationFrame(render);
 }
 ;
@@ -610,7 +978,7 @@ function update() {
             if (player.projectiles[k] == null)
                 continue;
             if (asteroids[i].collidingWith(player.projectiles[k])) {
-                const newAst = asteroids[i].mitosis(player.projectiles[k].angle);
+                const newAst = asteroids[i].mitosisAsteroid(player.projectiles[k].angle);
                 newAst.forEach((e) => {
                     asteroids.push(e);
                 });
@@ -627,3 +995,13 @@ function update() {
 }
 ;
 setInterval(update, fpsToMilliseconds(globalFPS));
+rsjs(canvas, "full", {
+    margin_height: 0,
+    margin_width: 0
+}, 1);
+window.addEventListener("resize", _ => {
+    rsjs(canvas, "full", {
+        margin_height: 0,
+        margin_width: 0
+    }, 1);
+});
