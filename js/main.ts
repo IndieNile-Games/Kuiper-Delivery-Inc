@@ -10,10 +10,38 @@ adds a little bit of structure to javascript, while still allowing for a
 
 */ 
 
-declare var Sprite: SpriteConstructor; // Only way I could get LMS canvas to work
+declare const Sprite: SpriteConstructor; // Only way I could get LMS canvas to work
+declare const JoyStick: JoyStickConstructor;
 declare function rsjs(element: HTMLElement, resize_type: ResizeType, options: ResizeJSOptions, scale?: number): void; // Load the ResizeJS lib
 
 type bool = boolean; // I'm used to typing "bool", and I will never not be used to it.
+
+interface JoyStickOptions {
+    title?: string,
+    width?: number,
+    height?: number,
+    internalFillColor?: string,
+    internalLineWidth ?: number,
+    internalStrokeColor?: string,
+    externalLineWidth?: number,
+    externalStrokeColor?: string,
+    autoReturnToCenter?: bool,
+};
+interface JoyStickConstructor {
+    new (htmlElementID: string, paramaters?: JoyStickOptions): JoyStick
+};
+type JoyStickDirections = "C" | "N" | "S" | "E" | "W" | "NW" | "SE" | "NE" | "SW"
+interface JoyStick {
+    GetWidth(): number,
+    GetHeight(): number,
+    GetPosX(): number,
+    GetPosY(): number,
+    GetX(): string,
+    GetY(): string,
+    GetDir(): JoyStickDirections
+};
+
+let joystick: JoyStick = null;
 
 type ResizeType = "full" | "reset" | "specific";
 interface ResizeJSOptions {
@@ -78,6 +106,17 @@ function weightedRandom(weight: number[], num: number[]): number {
         if (n < amt) return num[i];
     };
 };
+function isMobile(): bool {
+    return window.matchMedia("only screen and (max-width: 760px)").matches;
+};
+
+
+const fireButton: HTMLImageElement = <HTMLImageElement>document.querySelector("#fireBtn");
+const dashButton: HTMLImageElement = <HTMLImageElement>document.querySelector("#dashBtn");
+
+let fireButtonState: number = 0;
+let dashButtonState: number = 2;
+
 
 const canvas: HTMLCanvasElement = <HTMLCanvasElement>document.querySelector("#canvas");
 const ctx: CanvasRenderingContext2D = canvas.getContext("2d");
@@ -439,7 +478,8 @@ type LaserLetterCollectables = "l" | "a" | "z" | "e" | "r" | "plus";
 type ShotgunLetterCollectables = "s" | "h" | "o" | "t" | "g" | "u" | "n";
 interface PlayerCollectables {
     dash: DashLetterCollectables[]
-    shotgun: ShotgunLetterCollectables[]
+    shotgun: ShotgunLetterCollectables[],
+    laser: LaserLetterCollectables[]
 };
 interface PlayerSprites {
     still: number,
@@ -453,15 +493,16 @@ class Player extends MovingEntity {
 
     public collectables: PlayerCollectables = {
         dash: [],
-        shotgun: []
+        shotgun: [],
+        laser: []
     };
     public readonly possibleCollectables: PlayerCollectables = {
         dash: ["d", "a", "s", "h"],
-        shotgun: ["s", "h", "o", "t", "g", "u", "n"]
+        shotgun: ["s", "h", "o", "t", "g", "u", "n"],
+        laser: ["l", "a", "z", "e", "r", "plus"]
     };
     public coins: number = 0;
     public sprites: Sprite[] = [];
-    public flashSprite: Sprite;
     public projectiles: Projectile[] = [];
     public readonly speed: number = 3;
     public readonly rotationSpeed: number = 5;
@@ -575,39 +616,77 @@ class Player extends MovingEntity {
     };
 
     public input(): void {
-        if (Keys.getState(Keys.KEY_W)) {
-            this.dx = this.speed * Math.sin(rad(this.rotation));
-            this.dy = this.speed * -Math.cos(rad(this.rotation));
-            this.vx += this.dx;
-            this.vy += this.dy;
-        };
-        if (Keys.getState(Keys.KEY_A)) {
-            this.rotv -= this.rotationSpeed;
-        };
-        if (Keys.getState(Keys.KEY_S)) {
-            this.dx = -(this.speed/3) * Math.sin(rad(this.rotation));
-            this.dy = -(this.speed/3) * -Math.cos(rad(this.rotation));
-            this.vx += this.dx;
-            this.vy += this.dy;
-        };
-        if (Keys.getState(Keys.KEY_D)) {
-            this.rotv += this.rotationSpeed;
-        };
-        if (Keys.getState(Keys.KEY_SPACE) && this.hasDash()) {
-            if (this.dashCooldownTimer <= 0) {
+        if (isMobile()) {
+            if (Number(joystick.GetY()) > 0) {
+                this.dx = this.speed * Math.sin(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.dy = this.speed * -Math.cos(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.vx += this.dx;
+                this.vy += this.dy;
+            };
+            if (Number(joystick.GetY()) < 0) {
+                this.dx = -(this.speed/3) * Math.sin(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.dy = -(this.speed/3) * -Math.cos(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.vx += this.dx;
+                this.vy += this.dy;
+            };
+            if (Number(joystick.GetX()) > 0) {
+                this.rotv += this.rotationSpeed * Math.abs(Number(joystick.GetX())) / 100;
+            };
+            if (Number(joystick.GetX()) < 0) {
+                this.rotv -= this.rotationSpeed * Math.abs(Number(joystick.GetX())) / 100;
+            };
+            if (dashButtonState == 1 && this.hasDash()) {
+                if (this.dashCooldownTimer <= 0) {
+                    this.dx = this.speed * Math.sin(rad(this.rotation));
+                    this.dy = this.speed * -Math.cos(rad(this.rotation));
+                    this.flashX = this.x;
+                    this.flashY = this.y;
+                    this.vx += this.dx*this.dashMultiplyer;
+                    this.vy += this.dy*this.dashMultiplyer;
+                    this.dashCooldownTimer = this.dashCooldown;
+                };
+            };
+            if (fireButtonState == 1) {
+                if (this.fireCooldownTimer <= 0) {
+                    this.fire();
+                    this.fireCooldownTimer = this.fireCooldown
+                };
+            };
+        } else {
+            if (Keys.getState(Keys.KEY_W)) {
                 this.dx = this.speed * Math.sin(rad(this.rotation));
                 this.dy = this.speed * -Math.cos(rad(this.rotation));
-                this.flashX = this.x;
-                this.flashY = this.y;
-                this.vx += this.dx*this.dashMultiplyer;
-                this.vy += this.dy*this.dashMultiplyer;
-                this.dashCooldownTimer = this.dashCooldown;
+                this.vx += this.dx;
+                this.vy += this.dy;
             };
-        };
-        if (Mouse.left) {
-            if (this.fireCooldownTimer <= 0) {
-                this.fire();
-                this.fireCooldownTimer = this.fireCooldown
+            if (Keys.getState(Keys.KEY_A)) {
+                this.rotv -= this.rotationSpeed;
+            };
+            if (Keys.getState(Keys.KEY_S)) {
+                this.dx = -(this.speed/3) * Math.sin(rad(this.rotation));
+                this.dy = -(this.speed/3) * -Math.cos(rad(this.rotation));
+                this.vx += this.dx;
+                this.vy += this.dy;
+            };
+            if (Keys.getState(Keys.KEY_D)) {
+                this.rotv += this.rotationSpeed;
+            };
+            if (Keys.getState(Keys.KEY_SPACE) && this.hasDash()) {
+                if (this.dashCooldownTimer <= 0) {
+                    this.dx = this.speed * Math.sin(rad(this.rotation));
+                    this.dy = this.speed * -Math.cos(rad(this.rotation));
+                    this.flashX = this.x;
+                    this.flashY = this.y;
+                    this.vx += this.dx*this.dashMultiplyer;
+                    this.vy += this.dy*this.dashMultiplyer;
+                    this.dashCooldownTimer = this.dashCooldown;
+                };
+            };
+            if (Mouse.left) {
+                if (this.fireCooldownTimer <= 0) {
+                    this.fire();
+                    this.fireCooldownTimer = this.fireCooldown
+                };
             };
         };
     };
@@ -1022,4 +1101,46 @@ window.addEventListener("resize", _ => {
         margin_height: 0,
         margin_width: 0
     }, 1);
+});
+
+if (isMobile()) {
+    joystick = new JoyStick("mobControls", {
+        autoReturnToCenter: true,
+        width: 100,
+        height: 100,
+        internalFillColor: "rgb(100, 100, 100)",
+        internalStrokeColor: "rgb(75, 75, 75)",
+        externalStrokeColor: "rgba(0, 0, 0, 0)"
+    });
+
+    const mobCont: HTMLDivElement = <HTMLDivElement>document.querySelectorAll("div#mobControls")[0];
+    mobCont.style.display = "block";
+};
+
+fireButton.addEventListener('touchstart', _ => {
+    fireButtonState = 1;
+    fireButton.src = "images/mobile/fireon.png";
+});
+fireButton.addEventListener('touchend', _ => {
+    fireButtonState = 0;
+    fireButton.src = "images/mobile/fireoff.png";
+});
+
+dashButton.addEventListener('touchstart', _ => {
+    if (player.hasDash()) {
+        dashButtonState = 1;
+        dashButton.src = "images/mobile/dashon.png";
+    } else {
+        dashButtonState = 2;
+        dashButton.src = "images/mobile/dashdis.png";
+    };
+});
+dashButton.addEventListener('touchend', _ => {
+    if (player.hasDash()) {
+        dashButtonState = 0;
+        dashButton.src = "images/mobile/dashoff.png";
+    } else {
+        dashButtonState = 2;
+        dashButton.src = "images/mobile/dashdis.png";
+    };
 });

@@ -11,6 +11,10 @@ adds a little bit of structure to javascript, while still allowing for a
 */
 ;
 ;
+;
+let joystick = null;
+;
+;
 function rad(degrees) {
     return degrees * (Math.PI / 180);
 }
@@ -53,6 +57,14 @@ function weightedRandom(weight, num) {
     ;
 }
 ;
+function isMobile() {
+    return window.matchMedia("only screen and (max-width: 760px)").matches;
+}
+;
+const fireButton = document.querySelector("#fireBtn");
+const dashButton = document.querySelector("#dashBtn");
+let fireButtonState = 0;
+let dashButtonState = 2;
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const globalSpeed = 3;
@@ -394,11 +406,13 @@ class Player extends MovingEntity {
         super(canvas.width / 2, canvas.height / 2);
         this.collectables = {
             dash: [],
-            shotgun: []
+            shotgun: [],
+            laser: []
         };
         this.possibleCollectables = {
             dash: ["d", "a", "s", "h"],
-            shotgun: ["s", "h", "o", "t", "g", "u", "n"]
+            shotgun: ["s", "h", "o", "t", "g", "u", "n"],
+            laser: ["l", "a", "z", "e", "r", "plus"]
         };
         this.coins = 0;
         this.sprites = [];
@@ -517,45 +531,93 @@ class Player extends MovingEntity {
     }
     ;
     input() {
-        if (Keys.getState(Keys.KEY_W)) {
-            this.dx = this.speed * Math.sin(rad(this.rotation));
-            this.dy = this.speed * -Math.cos(rad(this.rotation));
-            this.vx += this.dx;
-            this.vy += this.dy;
-        }
-        ;
-        if (Keys.getState(Keys.KEY_A)) {
-            this.rotv -= this.rotationSpeed;
-        }
-        ;
-        if (Keys.getState(Keys.KEY_S)) {
-            this.dx = -(this.speed / 3) * Math.sin(rad(this.rotation));
-            this.dy = -(this.speed / 3) * -Math.cos(rad(this.rotation));
-            this.vx += this.dx;
-            this.vy += this.dy;
-        }
-        ;
-        if (Keys.getState(Keys.KEY_D)) {
-            this.rotv += this.rotationSpeed;
-        }
-        ;
-        if (Keys.getState(Keys.KEY_SPACE) && this.hasDash()) {
-            if (this.dashCooldownTimer <= 0) {
-                this.dx = this.speed * Math.sin(rad(this.rotation));
-                this.dy = this.speed * -Math.cos(rad(this.rotation));
-                this.flashX = this.x;
-                this.flashY = this.y;
-                this.vx += this.dx * this.dashMultiplyer;
-                this.vy += this.dy * this.dashMultiplyer;
-                this.dashCooldownTimer = this.dashCooldown;
+        if (isMobile()) {
+            if (Number(joystick.GetY()) > 0) {
+                this.dx = this.speed * Math.sin(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.dy = this.speed * -Math.cos(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.vx += this.dx;
+                this.vy += this.dy;
+            }
+            ;
+            if (Number(joystick.GetY()) < 0) {
+                this.dx = -(this.speed / 3) * Math.sin(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.dy = -(this.speed / 3) * -Math.cos(rad(this.rotation)) * Math.abs(Number(joystick.GetY())) / 100;
+                this.vx += this.dx;
+                this.vy += this.dy;
+            }
+            ;
+            if (Number(joystick.GetX()) > 0) {
+                this.rotv += this.rotationSpeed * Math.abs(Number(joystick.GetX())) / 100;
+            }
+            ;
+            if (Number(joystick.GetX()) < 0) {
+                this.rotv -= this.rotationSpeed * Math.abs(Number(joystick.GetX())) / 100;
+            }
+            ;
+            if (dashButtonState == 1 && this.hasDash()) {
+                if (this.dashCooldownTimer <= 0) {
+                    this.dx = this.speed * Math.sin(rad(this.rotation));
+                    this.dy = this.speed * -Math.cos(rad(this.rotation));
+                    this.flashX = this.x;
+                    this.flashY = this.y;
+                    this.vx += this.dx * this.dashMultiplyer;
+                    this.vy += this.dy * this.dashMultiplyer;
+                    this.dashCooldownTimer = this.dashCooldown;
+                }
+                ;
+            }
+            ;
+            if (fireButtonState == 1) {
+                if (this.fireCooldownTimer <= 0) {
+                    this.fire();
+                    this.fireCooldownTimer = this.fireCooldown;
+                }
+                ;
             }
             ;
         }
-        ;
-        if (Mouse.left) {
-            if (this.fireCooldownTimer <= 0) {
-                this.fire();
-                this.fireCooldownTimer = this.fireCooldown;
+        else {
+            if (Keys.getState(Keys.KEY_W)) {
+                this.dx = this.speed * Math.sin(rad(this.rotation));
+                this.dy = this.speed * -Math.cos(rad(this.rotation));
+                this.vx += this.dx;
+                this.vy += this.dy;
+            }
+            ;
+            if (Keys.getState(Keys.KEY_A)) {
+                this.rotv -= this.rotationSpeed;
+            }
+            ;
+            if (Keys.getState(Keys.KEY_S)) {
+                this.dx = -(this.speed / 3) * Math.sin(rad(this.rotation));
+                this.dy = -(this.speed / 3) * -Math.cos(rad(this.rotation));
+                this.vx += this.dx;
+                this.vy += this.dy;
+            }
+            ;
+            if (Keys.getState(Keys.KEY_D)) {
+                this.rotv += this.rotationSpeed;
+            }
+            ;
+            if (Keys.getState(Keys.KEY_SPACE) && this.hasDash()) {
+                if (this.dashCooldownTimer <= 0) {
+                    this.dx = this.speed * Math.sin(rad(this.rotation));
+                    this.dy = this.speed * -Math.cos(rad(this.rotation));
+                    this.flashX = this.x;
+                    this.flashY = this.y;
+                    this.vx += this.dx * this.dashMultiplyer;
+                    this.vy += this.dy * this.dashMultiplyer;
+                    this.dashCooldownTimer = this.dashCooldown;
+                }
+                ;
+            }
+            ;
+            if (Mouse.left) {
+                if (this.fireCooldownTimer <= 0) {
+                    this.fire();
+                    this.fireCooldownTimer = this.fireCooldown;
+                }
+                ;
             }
             ;
         }
@@ -1004,4 +1066,47 @@ window.addEventListener("resize", _ => {
         margin_height: 0,
         margin_width: 0
     }, 1);
+});
+if (isMobile()) {
+    joystick = new JoyStick("mobControls", {
+        autoReturnToCenter: true,
+        width: 100,
+        height: 100,
+        internalFillColor: "rgb(100, 100, 100)",
+        internalStrokeColor: "rgb(75, 75, 75)",
+        externalStrokeColor: "rgba(0, 0, 0, 0)"
+    });
+    const mobCont = document.querySelectorAll("div#mobControls")[0];
+    mobCont.style.display = "block";
+}
+;
+fireButton.addEventListener('touchstart', _ => {
+    fireButtonState = 1;
+    fireButton.src = "images/mobile/fireon.png";
+});
+fireButton.addEventListener('touchend', _ => {
+    fireButtonState = 0;
+    fireButton.src = "images/mobile/fireoff.png";
+});
+dashButton.addEventListener('touchstart', _ => {
+    if (player.hasDash()) {
+        dashButtonState = 1;
+        dashButton.src = "images/mobile/dashon.png";
+    }
+    else {
+        dashButtonState = 2;
+        dashButton.src = "images/mobile/dashdis.png";
+    }
+    ;
+});
+dashButton.addEventListener('touchend', _ => {
+    if (player.hasDash()) {
+        dashButtonState = 0;
+        dashButton.src = "images/mobile/dashoff.png";
+    }
+    else {
+        dashButtonState = 2;
+        dashButton.src = "images/mobile/dashdis.png";
+    }
+    ;
 });

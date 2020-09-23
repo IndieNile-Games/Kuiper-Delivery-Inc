@@ -9,9 +9,17 @@
     <link rel="stylesheet" href="css/style.css">
     <script src="js/lms-canvas.js"></script>
     <script src="js/rs.js"></script>
+    <script src="js/joy.min.js"></script>
 </head>
 <body>
     <canvas id="canvas" width="800" height="600"></canvas>
+    <div id="mobControls" style="display: none;">
+        <div id="joystickDiv"></div>
+        <div class="buttons">
+            <img class="btn" id="fireBtn" src="images/mobile/fireoff.png" alt="Fire">
+            <img class="btn" id="dashBtn" src="images/mobile/dashdis.png" alt="Dash">
+        </div>
+    </div>
     <div class="devMenu" style="display: none;">
         <h3>Dev Menu</h3>
         <p>Shotgun: <input type="checkbox" id="hasShotgun" value="off"></p>

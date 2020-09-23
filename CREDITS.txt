@@ -1,0 +1,15 @@
+KEPLER DELIVERY INC
+
+---
+
+PROGRAMING
+- Gavin H. Smith (Lettuce)
+
+SPRITING
+- Deadstar111
+
+MUSIC/SFX
+- Bread
+
+LIBRARIES
+- JoyStick.js: Roberto D'Amico (https://github.com/bobboteck/JoyStick)

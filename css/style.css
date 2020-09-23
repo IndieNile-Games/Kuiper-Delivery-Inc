@@ -21,3 +21,29 @@ div.devMenu {
     color: white;
     min-width: 100px;
 }
+div#mobControls {
+    position: fixed;
+    bottom: 0px;
+    left: 0px;
+}
+div#mobControls > #joystickDiv {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+}
+div#mobControls > .buttons {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+}
+div#mobControls > .buttons:first-child {
+    margin-right: 10px;
+    float: left;
+}
+div#mobControls > .buttons:last-child {
+    float: left;
+}
+.btn {
+    width: 40px;
+    height: 40px;
+}
