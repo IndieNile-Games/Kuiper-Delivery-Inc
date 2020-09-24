@@ -173,7 +173,7 @@ class MovingEntity extends Rect {
 }
 ;
 const getCollectableType = function () {
-    const toGen = weightedRandom([5], [0]);
+    const toGen = weightedRandom([10], [0]);
     switch (toGen) {
         case 0:
             return "letter";
@@ -321,7 +321,8 @@ class Asteroid extends MovingEntity {
         const toGen = getCollectableType();
         switch (toGen) {
             case "letter":
-                final.push();
+                let newCollectable = CollectableLetter.createRandom(this.toRect().x, this.toRect().y);
+                final.push(newCollectable);
                 break;
             default:
                 break;
@@ -376,9 +377,9 @@ class Projectile extends Rect {
     static create(x, y, angle, type) {
         switch (type) {
             case "tri":
-                return new Projectile(x, y, angle, new Sprite("images/projectile1.png", 280, 320, 2));
+                return new Projectile(x, y, angle, new Sprite("images/projectile1.png", 280, 320, 2, 0, 10));
             default:
-                return new Projectile(x, y, angle, new Sprite("images/projectile0.png", 280, 320, 2));
+                return new Projectile(x, y, angle, new Sprite("images/projectile0.png", 280, 320, 2, 0, 10));
         }
         ;
     }
@@ -414,6 +415,31 @@ class Player extends MovingEntity {
             shotgun: ["s", "h", "o", "t", "g", "u", "n"],
             laser: ["l", "a", "z", "e", "r", "plus"]
         };
+        this.possibleCollectableKeys = {
+            dash: {
+                d: null,
+                a: null,
+                s: null,
+                h: null
+            },
+            shotgun: {
+                s: null,
+                h: null,
+                o: null,
+                t: null,
+                g: null,
+                u: null,
+                n: null
+            },
+            laser: {
+                l: null,
+                a: null,
+                z: null,
+                e: null,
+                r: null,
+                plus: null
+            }
+        };
         this.coins = 0;
         this.sprites = [];
         this.projectiles = [];
@@ -424,16 +450,23 @@ class Player extends MovingEntity {
         this.dashMultiplyer = 12;
         this.fireCooldownTimer = 0;
         this.fireCooldown = globalFPS * 0.5;
+        this.levelInc = 5000;
         this.dx = 0;
         this.dy = 0;
         this.flashX = 0;
         this.flashY = 0;
+        this.score = 0;
+        this.prevScore = 0;
+        this.highScore = 0;
+        this.level = 0;
+        this.swidth = 70;
+        this.sheight = 70;
         this.vx = 0;
         this.vy = 0;
         this.rotv = 0;
         this.rotFriction = 0.7;
-        this.width = 70;
-        this.height = 70;
+        this.width = 58;
+        this.height = 58;
         this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 128, 128, 1, 0);
         this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 128, 128, 4, 1);
         this.dx = this.speed * Math.sin(rad(this.rotation));
@@ -624,8 +657,29 @@ class Player extends MovingEntity {
         ;
     }
     ;
+    reset(x, y) {
+        this.x = x;
+        this.y = y;
+        this.rotv = 0;
+        this.rotation = 90;
+        this.score = 0;
+        this.collectables.dash = [];
+        this.collectables.shotgun = [];
+        this.collectables.laser = [];
+        this.projectiles = [];
+        this.vx = 0;
+        this.vy = 0;
+        this.level = 0;
+    }
+    ;
     update() {
         this.liveTime++;
+        if (this.score % this.levelInc == 0 && this.score != this.prevScore) {
+            this.level++;
+        }
+        ;
+        if (this.score > this.highScore)
+            this.highScore = this.score;
         this.dashCooldownTimer--;
         this.fireCooldownTimer--;
         this.input();
@@ -697,17 +751,21 @@ class Player extends MovingEntity {
     draw(ctx) {
         if ((this.vx > this.speed * 1.8 || this.vy > this.speed * 1.8) || (this.vx < -this.speed * 1.8 || this.vy < -this.speed * 1.8)) {
             this.sprites[Player.SPRITEMAP.active].rotation = this.rotation;
-            this.sprites[Player.SPRITEMAP.active].draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+            this.sprites[Player.SPRITEMAP.active].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
         }
         else {
             this.sprites[Player.SPRITEMAP.still].rotation = this.rotation;
-            this.sprites[Player.SPRITEMAP.still].draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+            this.sprites[Player.SPRITEMAP.still].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
         }
         ;
     }
     ;
     toRect() {
         return new Rect(this.x - (this.width / 2), this.y - (this.height / 2), this.width, this.height);
+    }
+    ;
+    toRect2() {
+        return new Rect(this.x - (this.swidth / 2), this.y - (this.sheight / 2), this.swidth, this.sheight);
     }
     ;
 }
@@ -724,41 +782,60 @@ class Collectable extends Rect {
         this.value = value;
     }
     ;
+    draw(ctx) {
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+    }
+    ;
 }
 ;
 ;
-/*
-const collectableLetterSprites: CollectableLetterSprites = {
+class CollectableLetter extends Collectable {
+    constructor(x, y, name, value, sprite) {
+        super(x, y, 40, 45, name, value, sprite);
+    }
+    static createRandom(x, y) {
+        const possibleNames = Object.keys(CollectableLetter.SPRITES);
+        const name = possibleNames[Math.floor(Math.random() * possibleNames.length)];
+        const possibleValues = Object.keys(player.possibleCollectableKeys[name]);
+        const value = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+        console.log(name, value);
+        return new CollectableLetter(x, y, name, value, CollectableLetter.SPRITES[name][value]);
+    }
+    ;
+    ;
+}
+CollectableLetter.SPRITES = {
     dash: {
-
+        d: new Sprite("images/letters/dash-d.png", 256, 288, 1),
+        a: new Sprite("images/letters/dash-a.png", 256, 288, 1),
+        s: new Sprite("images/letters/dash-s.png", 256, 288, 1),
+        h: new Sprite("images/letters/dash-h.png", 256, 288, 1)
     },
-    laser: {
-
+    shotgun: {
+        s: new Sprite("images/letters/shotgun-s.png", 256, 288, 1),
+        h: new Sprite("images/letters/shotgun-h.png", 256, 288, 1),
+        o: new Sprite("images/letters/shotgun-o.png", 256, 288, 1),
+        t: new Sprite("images/letters/shotgun-t.png", 256, 288, 1),
+        g: new Sprite("images/letters/shotgun-g.png", 256, 288, 1),
+        u: new Sprite("images/letters/shotgun-u.png", 256, 288, 1),
+        n: new Sprite("images/letters/shotgun-n.png", 256, 288, 1)
     }
 };
-*/
-class CollectableLetter extends Collectable {
-    static createRandom(x, y) {
-        const possibleNames = Object.keys(player.collectables);
-        const name = possibleNames[Math.floor(Math.random() * possibleNames.length)];
-        const possibleValues = player.possibleCollectables[name];
-        const value = possibleValues[Math.floor(Math.random() * possibleValues.length)];
-        return new CollectableLetter(x, y, name, value, new Sprite("image/ship-zoom.png", 128, 128, 1, 0));
-    }
-    ;
-    constructor(x, y, name, value, sprite) {
-        super(x, y, 50, 50, name, value, sprite);
-    }
-    ;
-}
 ;
 class DrawableText extends Rect {
-    constructor(text, x, y) {
+    constructor(text, x, y, color, fontSize) {
         super(x, y);
         this.text = text;
+        this.color = color;
+        this.fontSize = fontSize;
     }
     ;
     draw(ctx) {
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillStyle = this.color;
+        ctx.font = `${this.fontSize}px "8BIT-WONDER"`;
+        ctx.fillText(this.text, this.x, this.y);
     }
     ;
 }
@@ -810,7 +887,7 @@ class UIElement extends Rect {
 ;
 const cameraRect = new Rect(0, 0, canvas.width, canvas.height - 60);
 const player = new Player();
-const asteroids = [
+let asteroids = [
     Asteroid.create(),
     Asteroid.create(),
     Asteroid.create(),
@@ -820,6 +897,7 @@ const asteroids = [
     Asteroid.create(),
     Asteroid.create()
 ]; // All the asteroids
+let explosions = [];
 const backdropStar = [
     new Backdrop("images/stars.png", 800, 600, 1, 0, 0),
     new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width),
@@ -994,6 +1072,7 @@ const uiElements = [
     new UIElement(new Sprite("images/upgrade/dash.png", 170, 50, 10), 15, 555, 102, 30, dashUpgradeUpdate),
     new UIElement(new Sprite("images/upgrade/shotgun.png", 290, 50, 10), 124.5, 555, 174, 30, shotgunUpgradeUpdate)
 ];
+let collectables = [];
 function render() {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1013,16 +1092,27 @@ function render() {
         asteroids[i].draw(ctx);
     }
     ;
+    for (let i = 0; i < collectables.length; i++) {
+        if (collectables[i] == null)
+            continue;
+        collectables[i].draw(ctx);
+    }
+    ;
     player.draw(ctx);
     for (let i = 0; i < uiElements.length; i++) {
+        if (uiElements[i] == null)
+            continue;
         uiElements[i].draw(ctx);
     }
     ;
+    new DrawableText(`SCORE ${player.score.toString()}  HI SCORE ${player.highScore.toString()}  LEVEL ${player.level + 1}`, 10, 10, "#ffffff", 18).draw(ctx);
     requestAnimationFrame(render);
 }
 ;
 render();
+let spawnAsteroidCounter = 0;
 function update() {
+    player.prevScore = player.score;
     for (let i = 0; i < backdropStar.length; i++) {
         backdropStar[i].update();
     }
@@ -1040,20 +1130,64 @@ function update() {
             if (player.projectiles[k] == null)
                 continue;
             if (asteroids[i].collidingWith(player.projectiles[k])) {
-                const newAst = asteroids[i].mitosisAsteroid(player.projectiles[k].angle);
-                newAst.forEach((e) => {
-                    asteroids.push(e);
-                });
-                delete asteroids[i];
-                delete player.projectiles[k];
-                continue;
+                if (asteroids[i].mitosisType() == "more") {
+                    const newAst = asteroids[i].mitosisAsteroid(player.projectiles[k].angle);
+                    newAst.forEach((e) => {
+                        asteroids.push(e);
+                    });
+                    delete asteroids[i];
+                    delete player.projectiles[k];
+                    player.score += 50;
+                    continue;
+                }
+                else {
+                    const newAst = asteroids[i].mitosisCollectable();
+                    newAst.forEach((e) => {
+                        collectables.push(e);
+                    });
+                    delete asteroids[i];
+                    delete player.projectiles[k];
+                    player.score += 50;
+                    continue;
+                }
+                ;
             }
             ;
+        }
+        ;
+        if (player.collidingWith(asteroids[i].toRect())) {
+            asteroids = [
+                Asteroid.create(),
+                Asteroid.create(),
+                Asteroid.create(),
+                Asteroid.create(),
+                Asteroid.create(),
+                Asteroid.create(),
+                Asteroid.create(),
+                Asteroid.create()
+            ];
+            player.reset(cameraRect.width / 2, cameraRect.height / 2);
+            collectables = [];
+        }
+        ;
+    }
+    ;
+    for (let i = 0; i < collectables.length; i++) {
+        if (collectables[i] == null)
+            continue;
+        if (collectables[i].collidingWith(player.toRect())) {
+            player.collectables[collectables[i].name].push(collectables[i].value);
+            delete collectables[i];
+            player.score += 150;
+            continue;
         }
         ;
     }
     ;
     player.update();
+    spawnAsteroidCounter++;
+    if (spawnAsteroidCounter % (30 * 4) - (player.level * 10) == 0)
+        asteroids.push(Asteroid.create());
 }
 ;
 setInterval(update, fpsToMilliseconds(globalFPS));

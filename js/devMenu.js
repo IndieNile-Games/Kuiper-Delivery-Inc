@@ -4,18 +4,17 @@ devMenu.style.display = "block";
 const hasShotgun = document.querySelector("#hasShotgun");
 const hasDash = document.querySelector("#hasDash");
 
-const devInterval = setInterval(function () {
-
+hasShotgun.addEventListener("change", _ => {
     if (hasShotgun.checked) {
         player.collectables.shotgun = player.possibleCollectables.shotgun;
     } else {
         player.collectables.shotgun = [];
     };
-
+});
+hasDash.addEventListener("change", _ => {
     if (hasDash.checked) {
-        player.collectables.dash = player.possibleCollectables.dash;
+        player.collectables.shotgun = player.possibleCollectables.shotgun;
     } else {
-        player.collectables.dash = [];
+        player.collectables.shotgun = [];
     };
-
-}, 1000/30);
+});

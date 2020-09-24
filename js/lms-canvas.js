@@ -21,7 +21,8 @@ function calcRatio(baseRatio, similerRatio) {
 }
 ;
 class Sprite {
-    constructor(src, frameWidth, frameHeight, frameCount, frameStart = 0) {
+    constructor(src, frameWidth, frameHeight, frameCount, frameStart = 0, framesUntilUpdate = 1) {
+        this.activeTime = 0;
         this.rotation = 0;
         this.image = new Image();
         this.image.src = src;
@@ -30,6 +31,7 @@ class Sprite {
         this.frameStart = frameStart;
         this.frameCount = frameCount;
         this.currentFrame = frameStart;
+        this.framesUntilUpdate = framesUntilUpdate;
     }
     ;
     getFramePosition(x, y) {
@@ -56,7 +58,9 @@ class Sprite {
     }
     ;
     update() {
-        this.currentFrame++;
+        this.activeTime++;
+        if (this.activeTime % this.framesUntilUpdate == 0)
+            this.currentFrame++;
         if (this.currentFrame >= this.frameCount + this.frameStart) {
             this.currentFrame = this.frameStart;
         }
