@@ -565,6 +565,12 @@ class Player extends MovingEntity {
         this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 128, 128, 4, 1);
         this.dx = this.speed * Math.sin(rad(this.rotation));
         this.dy = this.speed * -Math.cos(rad(this.rotation));
+
+        if (!localStorage.getItem("kdi_hiscore")) {
+            localStorage.setItem("kdi_hiscore", String(0));
+        } else {
+            this.highScore = Number(localStorage.getItem("kdi_hiscore"));
+        };
     };
 
     public fire() {
@@ -748,6 +754,9 @@ class Player extends MovingEntity {
         };
 
         if (this.score > this.highScore) this.highScore = this.score
+        if (Number(localStorage.getItem("kdi_hiscore")) < this.highScore) {
+            localStorage.setItem("kdi_hiscore", this.highScore.toString());
+        };
 
         this.dashCooldownTimer--;
         this.fireCooldownTimer--;
