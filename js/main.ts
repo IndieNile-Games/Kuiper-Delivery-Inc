@@ -74,6 +74,57 @@ interface Sprite {
     draw(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number): void;
 };
 
+class Sound {
+    private audElement: HTMLAudioElement = <HTMLAudioElement>document.createElement("audio");
+
+    constructor(src: string, loop: bool = false, volume: number = 1) {
+        this.audElement.src = src;
+        this.audElement.loop = loop;
+        this.audElement.volume = volume;
+    };
+
+    public getVol(): number {
+        return this.audElement.volume
+    };
+    public setVol(vol: number): number {
+        this.audElement.volume = vol;
+        return this.audElement.volume;
+    };
+
+    public getTime(): number {
+        return this.audElement.currentTime;
+    };
+    public setTime(seconds: number): number {
+        this.audElement.currentTime = seconds;
+        return this.audElement.currentTime;
+    };
+
+    public play(): void {
+        this.audElement.play();
+    };
+    public pause(): void {
+        this.audElement.pause();
+    };
+    public stop(): void {
+        this.pause();
+        this.setTime(0);
+    };
+    public reset(): void {
+        this.stop();
+        this.play();
+    };
+};
+class BGM extends Sound {
+    constructor(src: string, vol: number = 1) {
+        super(src, true, vol);
+    };
+};
+class SFX extends Sound {
+    constructor(src: string, vol: number = 1) {
+        super(src, false, vol);
+    };
+};
+
 function rad(degrees: number): number { // Convert degrees to radians
     return degrees * (Math.PI / 180);
 };
@@ -109,6 +160,9 @@ function weightedRandom(weight: number[], num: number[]): number {
 function isMobile(): bool {
     return window.matchMedia("only screen and (max-width: 760px)").matches;
 };
+function invertHex(hex: string): string {
+    return (Number(`0x1${hex}`) ^ 0xFFFFFF).toString(16).substr(1).toUpperCase()
+};
 
 
 const fireButton: HTMLImageElement = <HTMLImageElement>document.querySelector("#fireBtn");
@@ -123,7 +177,7 @@ const ctx: CanvasRenderingContext2D = canvas.getContext("2d");
 
 
 const globalSpeed: number = 3;
-const globaFriction: number = 0.85;
+const globaFriction: number = 0.9;
 const globalFPS: number = 30;
 
 
@@ -162,6 +216,10 @@ class Mouse {
     public static middle: bool = false;
     public static right: bool = false;
 
+    public static toRect(): Rect {
+        return new Rect(Mouse.x, Mouse.y, 1, 1);
+    };
+
     public static handleMousedown(e: MouseEvent): void {
         if (e.button === Mouse.MOUSELEFT) {
             Mouse.left = true;
@@ -177,8 +235,8 @@ class Mouse {
         Mouse.right = false;
     };
     public static handleMousemove(e: {pageX: number, pageY: number}): void {
-        Mouse.x = e.pageX;
-        Mouse.y = e.pageY;
+        Mouse.x = Math.floor(e.pageX - canvas.getBoundingClientRect().x);
+        Mouse.y = Math.floor(e.pageY - canvas.getBoundingClientRect().y);
     };
 };
 canvas.addEventListener("mousedown", Mouse.handleMousedown);
@@ -190,12 +248,14 @@ class Rect {
     public y: number; // Y position
     public width: number; // Width
     public height: number; // Height
+    public sprite: Sprite = null;
 
-    constructor(x: number, y: number, width: number = 0, height: number = 0) {
+    constructor(x: number, y: number, width: number = 0, height: number = 0, sprite: Sprite = null) {
         this.x = x;
         this.y = y;
         this.width = width;
         this.height = height;
+        this.sprite = sprite;
     };
 
     public toRect(): Rect {
@@ -218,6 +278,14 @@ class Rect {
         && yrect.y > urect.y
         && yrect.y + yrect.height < urect.x + urect.height;
     };
+
+    public draw(ctx: CanvasRenderingContext2D): void {
+        if (this.sprite) {
+            this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        } else {
+            ctx.strokeRect(this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        }
+    };
 };
 
 class MovingEntity extends Rect { // A generic entity
@@ -233,12 +301,14 @@ class MovingEntity extends Rect { // A generic entity
     };
 };
 
-type CollectableType = "letter" | "none";
+type CollectableType = "letter" | "fuel" | "none";
 const getCollectableType = function (): CollectableType {
-    const toGen: number = weightedRandom([10], [0]);
+    const toGen: number = weightedRandom([10, 60, 30], [0, 1, 2]);
     switch (toGen) {
         case 0:
-            return "letter"
+            return "letter";
+        case 1:
+            return "fuel";
         default:
             return "none";
     };
@@ -413,7 +483,7 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
         return final;
     };
 
-    public mitosisCollectable(): Collectable[] {
+    public mitosisCollectable(): {type: CollectableType, col: Collectable[]} {
         const final: Collectable[] = [];
 
         const toGen: CollectableType = getCollectableType();
@@ -423,11 +493,17 @@ class Asteroid extends MovingEntity { // Asteroid class. Makes the rock things.
                 let newCollectable: CollectableLetter = CollectableLetter.createRandom(this.toRect().x, this.toRect().y);
                 final.push(newCollectable);
                 break;
+            case "fuel":
+                final.push(new CollectableFuel(this.toRect().x, this.toRect().y))
+                break;
             default:
                 break;
         }
 
-        return final;
+        return {
+            col: final,
+            type: toGen
+        };
     };
 
     public toRect(): Rect {
@@ -475,32 +551,36 @@ class Projectile extends Rect  {
 
 
 type DashLetterCollectables = "d" | "a" | "s" | "h";
-type LaserLetterCollectables = "l" | "a" | "z" | "e" | "r" | "plus";
+type SheildLetterCollectables = "s" | "h" | "e" | "i" | "l" | "d";
 type ShotgunLetterCollectables = "s" | "h" | "o" | "t" | "g" | "u" | "n";
 interface PlayerCollectables {
     dash: DashLetterCollectables[]
     shotgun: ShotgunLetterCollectables[],
-    laser: LaserLetterCollectables[]
+    sheild: SheildLetterCollectables[]
 };
 interface PlayerSprites {
     still: number,
-    active: number
+    active: number,
+    sh_still: number,
+    sh_active: number
 };
 class Player extends MovingEntity {
     public static SPRITEMAP: PlayerSprites = {
         still: 0,
-        active: 1
+        active: 1,
+        sh_still: 2,
+        sh_active: 3
     };
 
     public collectables: PlayerCollectables = {
         dash: [],
         shotgun: [],
-        laser: []
+        sheild: []
     };
     public readonly possibleCollectables: PlayerCollectables = {
         dash: ["d", "a", "s", "h"],
         shotgun: ["s", "h", "o", "t", "g", "u", "n"],
-        laser: ["l", "a", "z", "e", "r", "plus"]
+        sheild: ["s", "h", "e", "i", "l", "d"]
     };
     public readonly possibleCollectableKeys = {
         dash: {
@@ -518,13 +598,13 @@ class Player extends MovingEntity {
             u: null,
             n: null
         },
-        laser: {
-            l: null,
-            a: null,
-            z: null,
+        sheild: {
+            s: null,
+            h: null,
             e: null,
-            r: null,
-            plus: null
+            i: null,
+            l: null,
+            d: null
         }
     };
     public coins: number = 0;
@@ -538,7 +618,6 @@ class Player extends MovingEntity {
     public fireCooldownTimer: number = 0;
     public readonly fireCooldown: number = globalFPS * 0.5;
     public readonly levelInc: number = 5000;
-
     public dx: number = 0;
     public dy: number = 0;
     public flashX: number = 0;
@@ -546,16 +625,14 @@ class Player extends MovingEntity {
     public score: number = 0;
     public prevScore: number = 0;
     public highScore: number = 0;
-    public level: number = 0;
-
     public swidth: number = 70;
     public sheight: number = 70;
-
     public vx: number = 0;
     public vy: number = 0;
     public rotv: number = 0;
-    
     public readonly rotFriction: number = 0.7;
+    public readonly maxFuel: number = globalFPS * 20;
+    public fuel: number = globalFPS * 20;
 
     constructor() {
         super(canvas.width/2, canvas.height/2);
@@ -563,6 +640,8 @@ class Player extends MovingEntity {
         this.height = 58;
         this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 128, 128, 1, 0);
         this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 128, 128, 4, 1);
+        this.sprites[Player.SPRITEMAP.sh_still] = new Sprite("images/ship-s.png", 128, 128, 2, 0, 10);
+        this.sprites[Player.SPRITEMAP.sh_active] = new Sprite("images/ship-s.png", 128, 128, 4, 2, 10);
         this.dx = this.speed * Math.sin(rad(this.rotation));
         this.dy = this.speed * -Math.cos(rad(this.rotation));
 
@@ -654,6 +733,41 @@ class Player extends MovingEntity {
         };
         return finalState.s && finalState.h && finalState.o && finalState.t && finalState.g && finalState.u && finalState.n;
     };
+    public hasSheild(): bool {
+        let finalState = {
+            s: false,
+            h: false,
+            e: false,
+            i: false,
+            l: false,
+            d: false
+        };
+        for (let i: number = 0; i < this.collectables.sheild.length; i++) {
+            switch (this.collectables.sheild[i]) {
+                case "s":
+                    finalState.s = true;
+                    break;
+                case "h":
+                    finalState.h = true;
+                    break;
+                case "e":
+                    finalState.e = true;
+                    break;
+                case "i":
+                    finalState.i = true;
+                    break;
+                case "l":
+                    finalState.l = true;
+                    break;
+                case "d":
+                    finalState.d = true;
+                    break;
+                default:
+                    break;
+            };
+        };
+        return finalState.s && finalState.h && finalState.e && finalState.i && finalState.l && finalState.d;
+    };
 
     public input(): void {
         if (isMobile()) {
@@ -739,19 +853,20 @@ class Player extends MovingEntity {
         this.score = 0;
         this.collectables.dash = [];
         this.collectables.shotgun = [];
-        this.collectables.laser = [];
+        this.collectables.sheild = [];
         this.projectiles = [];
         this.vx = 0;
         this.vy = 0;
-        this.level = 0;
+        this.fuel = this.maxFuel;
+    };
+
+    public getLevel(): number {
+        return Math.floor(this.score/this.levelInc);
     };
 
     public update(): void {
         this.liveTime++;
-
-        if (this.score % this.levelInc == 0&& this.score != this.prevScore) {
-            this.level++;
-        };
+        this.fuel--;
 
         if (this.score > this.highScore) this.highScore = this.score
         if (Number(localStorage.getItem("kdi_hiscore")) < this.highScore) {
@@ -814,12 +929,22 @@ class Player extends MovingEntity {
         };
     };
     public draw(ctx: CanvasRenderingContext2D): void {
-        if ((this.vx > this.speed*1.8 || this.vy > this.speed*1.8) || (this.vx < -this.speed*1.8 || this.vy < -this.speed*1.8)) {
-            this.sprites[Player.SPRITEMAP.active].rotation = this.rotation;
-            this.sprites[Player.SPRITEMAP.active].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+        if (this.hasSheild()) {
+            if ((this.vx > this.speed*1.8 || this.vy > this.speed*1.8) || (this.vx < -this.speed*1.8 || this.vy < -this.speed*1.8)) {
+                this.sprites[Player.SPRITEMAP.sh_active].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.sh_active].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            } else {
+                this.sprites[Player.SPRITEMAP.sh_still].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.sh_still].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            };
         } else {
-            this.sprites[Player.SPRITEMAP.still].rotation = this.rotation;
-            this.sprites[Player.SPRITEMAP.still].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            if ((this.vx > this.speed*1.8 || this.vy > this.speed*1.8) || (this.vx < -this.speed*1.8 || this.vy < -this.speed*1.8)) {
+                this.sprites[Player.SPRITEMAP.active].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.active].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            } else {
+                this.sprites[Player.SPRITEMAP.still].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.still].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            };
         };
     };
 
@@ -857,6 +982,14 @@ interface CollectableLetterSprites {
         s: Sprite,
         h: Sprite
     },
+    sheild: {
+        s: Sprite,
+        h: Sprite,
+        e: Sprite,
+        i: Sprite,
+        l: Sprite,
+        d: Sprite
+    },
     shotgun: {
         s: Sprite,
         h: Sprite,
@@ -884,6 +1017,14 @@ class CollectableLetter extends Collectable {
             g: new Sprite("images/letters/shotgun-g.png", 256, 288, 1),
             u: new Sprite("images/letters/shotgun-u.png", 256, 288, 1),
             n: new Sprite("images/letters/shotgun-n.png", 256, 288, 1)
+        },
+        sheild: {
+            s: new Sprite("images/letters/shield-s.png", 256, 288, 1),
+            h: new Sprite("images/letters/shield-h.png", 256, 288, 1),
+            e: new Sprite("images/letters/shield-e.png", 256, 288, 1),
+            i: new Sprite("images/letters/shield-i.png", 256, 288, 1),
+            l: new Sprite("images/letters/shield-l.png", 256, 288, 1),
+            d: new Sprite("images/letters/shield-d.png", 256, 288, 1)
         }
     };
 
@@ -892,12 +1033,18 @@ class CollectableLetter extends Collectable {
         const name: string = possibleNames[Math.floor(Math.random()*possibleNames.length)];
         const possibleValues: string[] = Object.keys(player.possibleCollectableKeys[name]);
         const value = possibleValues[Math.floor(Math.random()*possibleValues.length)];
-        console.log(name, value);
+        //console.log(name, value);
         return new CollectableLetter(x, y, name, value, CollectableLetter.SPRITES[name][value]);
     };
 
     constructor(x: number, y: number, name: string, value: string, sprite: Sprite) {
         super(x, y, 40, 45, name, value, sprite);
+    };
+};
+
+class CollectableFuel extends Collectable {
+    constructor(x: number, y: number) {
+        super(x, y, 33, 47, "fuel", "fuel", new Sprite("images/fuel/canister.png", 33, 47, 1))
     };
 };
 
@@ -913,11 +1060,19 @@ class DrawableText extends Rect {
         this.fontSize = fontSize;
     };
 
-    public draw(ctx: CanvasRenderingContext2D): void {
-        ctx.textAlign = "left";
-        ctx.textBaseline = "top";
+    public draw(ctx: CanvasRenderingContext2D, drawCenter: bool = false): void {
+        if (drawCenter) {
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+        } else {
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+        };
         ctx.fillStyle = this.color;
-        ctx.font = `${this.fontSize}px "8BIT-WONDER"`;
+        ctx.strokeStyle = invertHex(this.color);
+        ctx.lineWidth = 3;
+        ctx.font = `${this.fontSize}px Dungeon-Swap`;
+        ctx.strokeText(this.text, this.x, this.y);
         ctx.fillText(this.text, this.x, this.y);
     };
 };
@@ -936,8 +1091,8 @@ class Backdrop extends Rect {
 
     public update(): void {
         this.x -= this.speed;
-        if (this.x <= -this.width) {
-            this.x = this.width*2;
+        if (this.x + this.width <= 0) {
+            this.x = canvas.width;
         };
     };
 
@@ -966,23 +1121,34 @@ class UIElement extends Rect {
         this.drawFrames = [];
     };
 };
+class Explosion extends Rect {
+    public sprite: Sprite;
+
+    constructor(x: number, y: number) {
+        super(x, y, 50, 50);
+        this.sprite = new Sprite("images/explosion.png", 512, 575, 9, 0, 8);
+    };
+
+    public toRect(): Rect {
+        return new Rect(this.x - (this.width/2), this.y - (this.height/2), this.width, this.height);
+    };
+
+    public draw(ctx: CanvasRenderingContext2D): void {
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height)
+    };
+};
 
 const cameraRect: Rect = new Rect(0, 0, canvas.width, canvas.height - 60);
 
 const player = new Player();
-let asteroids: Asteroid[] = [
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create()
-]; // All the asteroids
-let explosions: Sprite[] = [];
+player.reset(cameraRect.width/2, cameraRect.height/2);
+
+let asteroids: Asteroid[] = []; // All the asteroids
+let explosions: Explosion[] = [];
 
 const backdropStar: Backdrop[] = [
+    new Backdrop("images/bg.png", 1800, 600, 0.5, 0, 0),
+    new Backdrop("images/bg.png", 1800, 600, 0.5, 0, canvas.width),
     new Backdrop("images/stars.png", 800, 600, 1, 0, 0),
     new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width),
     new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width*2),
@@ -1120,19 +1286,236 @@ const shotgunUpgradeUpdate: Function = function (): void {
         };
     };
 };
+const sheildUpgradeUpdate: Function = function (): void {
+    let finalState = {
+        s: false,
+        h: false,
+        e: false,
+        i: false,
+        l: false,
+        d: false
+    };
+    for (let i: number = 0; i < player.collectables.sheild.length; i++) {
+        switch (player.collectables.sheild[i]) {
+            case "s":
+                finalState.s = true;
+                break;
+            case "h":
+                finalState.h = true;
+                break;
+            case "e":
+                finalState.e = true;
+                break;
+            case "i":
+                finalState.i = true;
+                break;
+            case "l":
+                finalState.l = true;
+                break;
+            case "d":
+                finalState.d = true;
+                break;
+            default:
+                break;
+        };
+    };
+    if (player.hasSheild()) {
+        this.drawFrames.push(13);
+    } else {
+        this.drawFrames.push(0);
+        if (finalState.s) {
+            this.drawFrames.push(2);
+        } else {
+            this.drawFrames.push(1);
+        };
+        if (finalState.h) {
+            this.drawFrames.push(4);
+        } else {
+            this.drawFrames.push(3);
+        };
+        if (finalState.i) {
+            this.drawFrames.push(6);
+        } else {
+            this.drawFrames.push(5);
+        };
+        if (finalState.e) {
+            this.drawFrames.push(8);
+        } else {
+            this.drawFrames.push(7);
+        };
+        if (finalState.l) {
+            this.drawFrames.push(10);
+        } else {
+            this.drawFrames.push(9);
+        };
+        if (finalState.d) {
+            this.drawFrames.push(12);
+        } else {
+            this.drawFrames.push(11);
+        };
+    };
+};
 const bottomBarUIUpdate: Function = function () {
     this.drawFrames = [0];
 };
+const playerFuelUpdate: Function = function () {
+    this.drawFrames = [3];
+    if (player.fuel < globalFPS * 15) {
+        this.drawFrames = [2];
+    };
+    if (player.fuel < globalFPS * 10) {
+        this.drawFrames = [1];
+    }
+    if (player.fuel <= 0) {
+        this.drawFrames = [0];
+    };
+};
+const alertUIUpdate: Function = function () {
+    if (player.fuel < globalFPS * 10) {
+        this.drawFrames = [0];
+    } else {
+        this.drawFrames = [1];
+    };
+};
 
 const uiElements: UIElement[] = [
-    new UIElement(new Sprite("images/bottombar.png", 960, 72, 1, 0), 0, 540, 800, 60, bottomBarUIUpdate),
+    new UIElement(new Sprite("images/bottombar.png", 6400, 480, 1, 0), 0, 540, 800, 60, bottomBarUIUpdate),
     new UIElement(new Sprite("images/upgrade/dash.png", 170, 50, 10), 15, 555, 102, 30, dashUpgradeUpdate),
-    new UIElement(new Sprite("images/upgrade/shotgun.png", 290, 50, 10), 124.5, 555, 174, 30, shotgunUpgradeUpdate)
+    new UIElement(new Sprite("images/upgrade/shotgun.png", 290, 50, 10), 124.5, 555, 174, 30, shotgunUpgradeUpdate),
+    new UIElement(new Sprite("images/upgrade/shield.png", 250, 50, 14), 306, 555, 150, 30, sheildUpgradeUpdate),
+    new UIElement(new Sprite("images/fuel/indi.png", 200, 50, 4), 463.5, 555, 120, 30, playerFuelUpdate),
+    new UIElement(new Sprite("images/alert.png", 110, 130, 2), 463.5 + 22, 555 - 100, 66, 78, alertUIUpdate)
 ];
 
 let collectables: CollectableLetter[] = [];
+let fuelCollectables: CollectableFuel[] = [];
 
-function render(): void { // Main render loop
+
+type GameState = "game" | "title" | "death"
+let gamestate: GameState = "title";
+let lastGameSprite: Sprite = new Sprite("images/bg.png", 1800, 600, 1);
+
+
+class Button extends Rect {
+    public sprite: Sprite;
+    public hsprite: Sprite;
+    public onclick: Function;
+
+    constructor(x: number, y: number, width: number, height: number, sprite: Sprite, onclick: Function, hoverSprite?: Sprite) {
+        super(x, y, width, height);
+        this.sprite = sprite;
+        this.onclick = onclick;
+        if (hoverSprite) {
+            this.hsprite = hoverSprite;
+        } else {
+            this.hsprite = this.sprite;
+        };
+    };
+
+    public isHovering(): bool {
+        return this.collidingWith(Mouse.toRect());
+    };
+
+    public isActive(): bool {
+        return this.collidingWith(Mouse.toRect()) && Mouse.left;
+    };
+
+    public update(): void {
+        if (this.isActive()) this.onclick();
+    };
+
+    public draw(ctx: CanvasRenderingContext2D): void {
+        if (this.isHovering()) {
+            this.hsprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        } else {
+            this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height)
+        };
+    };
+};
+
+class Scene extends Rect {
+    public buttons: Button[] = [];
+    public text: DrawableText[] = [];
+    public rects: Rect[] = [];
+
+    constructor(buttons: Button[], drawableText: DrawableText[], rects: Rect[]) {
+        super(0, 0, canvas.width, canvas.height);
+        this.buttons = buttons;
+        this.text = drawableText;
+        this.rects = rects;
+    };
+
+    public update() {
+        for (let i: number = 0; i < this.buttons.length; i++) {
+            this.buttons[i].update();
+        };
+    };
+
+    public draw(ctx: CanvasRenderingContext2D) {
+        lastGameSprite.draw(ctx, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        for (let i: number = 0; i < this.rects.length; i++) {
+            this.rects[i].draw(ctx);
+        };
+        for (let i: number = 0; i < this.buttons.length; i++) {
+            this.buttons[i].draw(ctx);
+        };
+        for (let i: number = 0; i < this.text.length; i++) {
+            this.text[i].draw(ctx, true);
+        };
+    };
+};
+
+
+const bgm: BGM = new BGM("aud/rushhour.wav");
+const stranded: BGM = new BGM("aud/stranded.wav");
+
+
+const titleScene: Scene = new Scene([
+    new Button((canvas.width/2)-200, (canvas.height/2)+150, 100, 100, new Sprite("images/ship.png", 128, 128, 1), _ => {
+        asteroids = [];
+        player.reset(cameraRect.width/2, cameraRect.height/2);
+        collectables = [];
+        fuelCollectables = [];
+        explosions = [];
+        gamestate = "game";
+        bgm.play();
+    }, new Sprite("images/ship-s.png", 128, 128, 1)),
+    new Button((canvas.width/2)+100, (canvas.height/2)+150, 100, 100, new Sprite("images/credits.png", 128, 128, 1), _ => {
+        window.open("credits.html", "_blank");
+    }, new Sprite("images/credits.png", 128, 128, 1, 1))
+],[
+    new DrawableText("PLAY", (canvas.width/2)-150, (canvas.height/2)+270, "#ffffff", 16),
+    new DrawableText("CREDITS", (canvas.width/2)+150, (canvas.height/2)+270, "#ffffff", 16)
+],[
+    new Rect(canvas.width/2 - 300, canvas.height/2 - (97/2), 600, 97, new Sprite("images/logo.png", 815, 132, 1))
+]);
+
+const deathScene: Scene = new Scene([
+    new Button((canvas.width/2)-300, (canvas.height/2)+150, 100, 100, new Sprite("images/back.png", 128, 128, 1), _ => {
+        gamestate = "title";
+        stranded.stop();
+    }, new Sprite("images/back.png", 128, 128, 1, 1)),
+    new Button((canvas.width/2)+200, (canvas.height/2)+150, 100, 100, new Sprite("images/ship.png", 128, 128, 1), _ => {
+        asteroids = [];
+        player.reset(cameraRect.width/2, cameraRect.height/2);
+        collectables = [];
+        fuelCollectables = [];
+        explosions = [];
+        gamestate = "game";
+        stranded.stop();
+        bgm.play();
+    }, new Sprite("images/ship-s.png", 128, 128, 1))
+],[
+    new DrawableText("YOU WERE STRANDED", canvas.width/2, canvas.height/2, "#ffffff", 28),
+    new DrawableText("TITLE", (canvas.width/2)-250, (canvas.height/2)+270, "#ffffff", 16),
+    new DrawableText("PLAY AGAIN", (canvas.width/2)+250, (canvas.height/2)+270, "#ffffff", 16)
+],[
+    
+]);
+
+function renderGame(): void { // Main render loop
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     for (let i: number = 0; i < backdropStar.length; i++) {
@@ -1146,23 +1529,44 @@ function render(): void { // Main render loop
         if (asteroids[i] == null) continue;
         asteroids[i].draw(ctx);
     };
+    for (let i: number = 0; i < explosions.length; i++) { // Shit code dont ask
+        if (explosions[i] == null) continue;
+        explosions[i].draw(ctx);
+    };
     for (let i: number = 0; i < collectables.length; i++) {
         if (collectables[i] == null) continue;
         collectables[i].draw(ctx);
+    };
+    for (let i: number = 0; i < fuelCollectables.length; i++) {
+        if (fuelCollectables[i] == null) continue;
+        fuelCollectables[i].draw(ctx);
     };
     player.draw(ctx);
     for (let i: number = 0; i < uiElements.length; i++) {
         if (uiElements[i] == null) continue;
         uiElements[i].draw(ctx);
     };
-    new DrawableText(`SCORE ${player.score.toString()}  HI SCORE ${player.highScore.toString()}  LEVEL ${player.level + 1}`, 10, 10, "#ffffff", 18).draw(ctx);
+    new DrawableText(`SCORE  ${player.score.toString()}    HI SCORE  ${player.highScore.toString()}    LEVEL  ${player.getLevel() + 1}`, 10, 10, "#ffffff", 18).draw(ctx);  
+};
+
+
+function render(): void {
+    if (gamestate == "game") {
+        renderGame();
+    } else if (gamestate == "death") {
+        deathScene.draw(ctx);
+    } else if (gamestate == "title") {
+        titleScene.draw(ctx);
+    };
     requestAnimationFrame(render);
 };
 render();
 
 let spawnAsteroidCounter: number = 0;
 
-function update(): void { // Main update loop
+const explosionSFX: SFX = new SFX("aud/explosion.wav");
+
+function updateGame(): void { // Main update loop
     player.prevScore = player.score;
     for (let i: number = 0; i < backdropStar.length; i++) {
         backdropStar[i].update();
@@ -1177,6 +1581,8 @@ function update(): void { // Main update loop
         for (let k: number = 0; k < player.projectiles.length; k++) {
             if (player.projectiles[k] == null) continue;
             if (asteroids[i].collidingWith(player.projectiles[k])) {
+                explosionSFX.play();
+                explosions.push(new Explosion(asteroids[i].x, asteroids[i].y));
                 if (asteroids[i].mitosisType() == "more") {
                     const newAst: Asteroid[] = asteroids[i].mitosisAsteroid(player.projectiles[k].angle);
                     newAst.forEach((e: Asteroid) => {
@@ -1189,32 +1595,39 @@ function update(): void { // Main update loop
 
                     continue;
                 } else {
-                    const newAst: CollectableLetter[] = asteroids[i].mitosisCollectable();
-                    newAst.forEach((e: CollectableLetter) => {
-                        collectables.push(e);
-                    });
+                    const newAst: {type: CollectableType, col: Collectable[]} = asteroids[i].mitosisCollectable();
+                    if (newAst.type == "letter") {
+                        newAst.col.forEach((e: CollectableLetter) => {
+                            collectables.push(e);
+                        });
+    
+                        player.score += 50;
+                    } else if (newAst.type == "fuel") {
+                        newAst.col.forEach((e: CollectableFuel) => {
+                            fuelCollectables.push(e);
+                        });
+                        
+                        player.score += 50;
+                    };
+
                     delete asteroids[i];
                     delete player.projectiles[k];
-
-                    player.score += 50
 
                     continue;
                 };
             };
         };
         if (player.collidingWith(asteroids[i].toRect())) {
-            asteroids = [
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create()
-            ];
-            player.reset(cameraRect.width/2, cameraRect.height/2);
-            collectables = [];
+            if (player.hasSheild()) {
+                player.collectables.sheild = [];
+                explosions.push(new Explosion(asteroids[i].x, asteroids[i].y));
+                delete asteroids[i];
+            } else {
+                gamestate = "death";
+                bgm.stop();
+                stranded.play();
+                lastGameSprite = new Sprite(canvas.toDataURL(), canvas.width, canvas.height, 1);
+            };
         };
     };
     for (let i: number = 0; i < collectables.length; i++) {
@@ -1223,17 +1636,51 @@ function update(): void { // Main update loop
             player.collectables[collectables[i].name].push(collectables[i].value);
             delete collectables[i];
 
-            player.score += 150
+            player.score += 150;
 
             continue;
         };
     };
+    for (let i: number = 0; i < fuelCollectables.length; i++) {
+        if (fuelCollectables[i] == null) continue;
+        if (fuelCollectables[i].collidingWith(player.toRect())) {
+            player.fuel = player.maxFuel;
+            delete fuelCollectables[i];
+
+            player.score += 150;
+
+            continue;
+        };
+    };
+    if (player.fuel <= 0) {
+        gamestate = "death";
+        bgm.stop();
+        stranded.play();
+        lastGameSprite = new Sprite(canvas.toDataURL(), canvas.width, canvas.height, 1);
+    };
+    for (let i: number = 0; i < explosions.length; i++) {
+        if (explosions[i] == null) continue;
+        if (explosions[i].sprite.currentFrame == explosions[i].sprite.frameCount - 1) {
+            delete explosions[i];
+        };
+    };
     player.update();
+
     spawnAsteroidCounter++;
-    if (spawnAsteroidCounter % (30*4)-(player.level*10) == 0) asteroids.push(Asteroid.create());
+    let remainderThing: number = (globalFPS*4)-(Math.floor(player.score/player.levelInc)*10);
+    if (remainderThing > globalFPS / 2) remainderThing = globalFPS;
+    if (spawnAsteroidCounter % remainderThing == 0) asteroids.push(Asteroid.create());
 };
 
-setInterval(update, fpsToMilliseconds(globalFPS));
+setInterval(_ => {
+    if (gamestate == "game") {
+        updateGame();
+    } else if (gamestate == "title") {
+        titleScene.update();
+    } else if (gamestate == "death") {
+        deathScene.update();
+    };
+}, fpsToMilliseconds(globalFPS));
 
 rsjs(canvas, "full", {
     margin_height: 0,

@@ -15,6 +15,66 @@ adds a little bit of structure to javascript, while still allowing for a
 let joystick = null;
 ;
 ;
+class Sound {
+    constructor(src, loop = false, volume = 1) {
+        this.audElement = document.createElement("audio");
+        this.audElement.src = src;
+        this.audElement.loop = loop;
+        this.audElement.volume = volume;
+    }
+    ;
+    getVol() {
+        return this.audElement.volume;
+    }
+    ;
+    setVol(vol) {
+        this.audElement.volume = vol;
+        return this.audElement.volume;
+    }
+    ;
+    getTime() {
+        return this.audElement.currentTime;
+    }
+    ;
+    setTime(seconds) {
+        this.audElement.currentTime = seconds;
+        return this.audElement.currentTime;
+    }
+    ;
+    play() {
+        this.audElement.play();
+    }
+    ;
+    pause() {
+        this.audElement.pause();
+    }
+    ;
+    stop() {
+        this.pause();
+        this.setTime(0);
+    }
+    ;
+    reset() {
+        this.stop();
+        this.play();
+    }
+    ;
+}
+;
+class BGM extends Sound {
+    constructor(src, vol = 1) {
+        super(src, true, vol);
+    }
+    ;
+}
+;
+class SFX extends Sound {
+    constructor(src, vol = 1) {
+        super(src, false, vol);
+    }
+    ;
+}
+;
 function rad(degrees) {
     return degrees * (Math.PI / 180);
 }
@@ -61,6 +121,10 @@ function isMobile() {
     return window.matchMedia("only screen and (max-width: 760px)").matches;
 }
 ;
+function invertHex(hex) {
+    return (Number(`0x1${hex}`) ^ 0xFFFFFF).toString(16).substr(1).toUpperCase();
+}
+;
 const fireButton = document.querySelector("#fireBtn");
 const dashButton = document.querySelector("#dashBtn");
 let fireButtonState = 0;
@@ -68,7 +132,7 @@ let dashButtonState = 2;
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const globalSpeed = 3;
-const globaFriction = 0.85;
+const globaFriction = 0.9;
 const globalFPS = 30;
 class Keys {
     static getState(key) {
@@ -94,6 +158,10 @@ Keys.state = [];
 document.addEventListener("keydown", Keys.handleKeydown);
 document.addEventListener("keyup", Keys.handleKeyup);
 class Mouse {
+    static toRect() {
+        return new Rect(Mouse.x, Mouse.y, 1, 1);
+    }
+    ;
     static handleMousedown(e) {
         if (e.button === Mouse.MOUSELEFT) {
             Mouse.left = true;
@@ -114,8 +182,8 @@ class Mouse {
     }
     ;
     static handleMousemove(e) {
-        Mouse.x = e.pageX;
-        Mouse.y = e.pageY;
+        Mouse.x = Math.floor(e.pageX - canvas.getBoundingClientRect().x);
+        Mouse.y = Math.floor(e.pageY - canvas.getBoundingClientRect().y);
     }
     ;
 }
@@ -132,11 +200,13 @@ canvas.addEventListener("mousedown", Mouse.handleMousedown);
 canvas.addEventListener("mouseup", Mouse.handleMouseup);
 canvas.addEventListener("mousemove", Mouse.handleMousemove);
 class Rect {
-    constructor(x, y, width = 0, height = 0) {
+    constructor(x, y, width = 0, height = 0, sprite = null) {
+        this.sprite = null;
         this.x = x;
         this.y = y;
         this.width = width;
         this.height = height;
+        this.sprite = sprite;
     }
     ;
     toRect() {
@@ -161,6 +231,15 @@ class Rect {
             && yrect.y + yrect.height < urect.x + urect.height;
     }
     ;
+    draw(ctx) {
+        if (this.sprite) {
+            this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        }
+        else {
+            ctx.strokeRect(this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        }
+    }
+    ;
 }
 ;
 class MovingEntity extends Rect {
@@ -173,10 +252,12 @@ class MovingEntity extends Rect {
 }
 ;
 const getCollectableType = function () {
-    const toGen = weightedRandom([10], [0]);
+    const toGen = weightedRandom([10, 60, 30], [0, 1, 2]);
     switch (toGen) {
         case 0:
             return "letter";
+        case 1:
+            return "fuel";
         default:
             return "none";
     }
@@ -324,10 +405,16 @@ class Asteroid extends MovingEntity {
                 let newCollectable = CollectableLetter.createRandom(this.toRect().x, this.toRect().y);
                 final.push(newCollectable);
                 break;
+            case "fuel":
+                final.push(new CollectableFuel(this.toRect().x, this.toRect().y));
+                break;
             default:
                 break;
         }
-        return final;
+        return {
+            col: final,
+            type: toGen
+        };
     }
     ;
     toRect() {
@@ -408,12 +495,12 @@ class Player extends MovingEntity {
         this.collectables = {
             dash: [],
             shotgun: [],
-            laser: []
+            sheild: []
         };
         this.possibleCollectables = {
             dash: ["d", "a", "s", "h"],
             shotgun: ["s", "h", "o", "t", "g", "u", "n"],
-            laser: ["l", "a", "z", "e", "r", "plus"]
+            sheild: ["s", "h", "e", "i", "l", "d"]
         };
         this.possibleCollectableKeys = {
             dash: {
@@ -431,13 +518,13 @@ class Player extends MovingEntity {
                 u: null,
                 n: null
             },
-            laser: {
-                l: null,
-                a: null,
-                z: null,
+            sheild: {
+                s: null,
+                h: null,
                 e: null,
-                r: null,
-                plus: null
+                i: null,
+                l: null,
+                d: null
             }
         };
         this.coins = 0;
@@ -458,17 +545,20 @@ class Player extends MovingEntity {
         this.score = 0;
         this.prevScore = 0;
         this.highScore = 0;
-        this.level = 0;
         this.swidth = 70;
         this.sheight = 70;
         this.vx = 0;
         this.vy = 0;
         this.rotv = 0;
         this.rotFriction = 0.7;
+        this.maxFuel = globalFPS * 20;
+        this.fuel = globalFPS * 20;
         this.width = 58;
         this.height = 58;
         this.sprites[Player.SPRITEMAP.still] = new Sprite("images/ship.png", 128, 128, 1, 0);
         this.sprites[Player.SPRITEMAP.active] = new Sprite("images/ship.png", 128, 128, 4, 1);
+        this.sprites[Player.SPRITEMAP.sh_still] = new Sprite("images/ship-s.png", 128, 128, 2, 0, 10);
+        this.sprites[Player.SPRITEMAP.sh_active] = new Sprite("images/ship-s.png", 128, 128, 4, 2, 10);
         this.dx = this.speed * Math.sin(rad(this.rotation));
         this.dy = this.speed * -Math.cos(rad(this.rotation));
         if (!localStorage.getItem("kdi_hiscore")) {
@@ -568,6 +658,44 @@ class Player extends MovingEntity {
         }
         ;
         return finalState.s && finalState.h && finalState.o && finalState.t && finalState.g && finalState.u && finalState.n;
+    }
+    ;
+    hasSheild() {
+        let finalState = {
+            s: false,
+            h: false,
+            e: false,
+            i: false,
+            l: false,
+            d: false
+        };
+        for (let i = 0; i < this.collectables.sheild.length; i++) {
+            switch (this.collectables.sheild[i]) {
+                case "s":
+                    finalState.s = true;
+                    break;
+                case "h":
+                    finalState.h = true;
+                    break;
+                case "e":
+                    finalState.e = true;
+                    break;
+                case "i":
+                    finalState.i = true;
+                    break;
+                case "l":
+                    finalState.l = true;
+                    break;
+                case "d":
+                    finalState.d = true;
+                    break;
+                default:
+                    break;
+            }
+            ;
+        }
+        ;
+        return finalState.s && finalState.h && finalState.e && finalState.i && finalState.l && finalState.d;
     }
     ;
     input() {
@@ -672,19 +800,20 @@ class Player extends MovingEntity {
         this.score = 0;
         this.collectables.dash = [];
         this.collectables.shotgun = [];
-        this.collectables.laser = [];
+        this.collectables.sheild = [];
         this.projectiles = [];
         this.vx = 0;
         this.vy = 0;
-        this.level = 0;
+        this.fuel = this.maxFuel;
+    }
+    ;
+    getLevel() {
+        return Math.floor(this.score / this.levelInc);
     }
     ;
     update() {
         this.liveTime++;
-        if (this.score % this.levelInc == 0 && this.score != this.prevScore) {
-            this.level++;
-        }
-        ;
+        this.fuel--;
         if (this.score > this.highScore)
             this.highScore = this.score;
         if (Number(localStorage.getItem("kdi_hiscore")) < this.highScore) {
@@ -760,13 +889,27 @@ class Player extends MovingEntity {
     }
     ;
     draw(ctx) {
-        if ((this.vx > this.speed * 1.8 || this.vy > this.speed * 1.8) || (this.vx < -this.speed * 1.8 || this.vy < -this.speed * 1.8)) {
-            this.sprites[Player.SPRITEMAP.active].rotation = this.rotation;
-            this.sprites[Player.SPRITEMAP.active].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+        if (this.hasSheild()) {
+            if ((this.vx > this.speed * 1.8 || this.vy > this.speed * 1.8) || (this.vx < -this.speed * 1.8 || this.vy < -this.speed * 1.8)) {
+                this.sprites[Player.SPRITEMAP.sh_active].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.sh_active].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            }
+            else {
+                this.sprites[Player.SPRITEMAP.sh_still].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.sh_still].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            }
+            ;
         }
         else {
-            this.sprites[Player.SPRITEMAP.still].rotation = this.rotation;
-            this.sprites[Player.SPRITEMAP.still].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            if ((this.vx > this.speed * 1.8 || this.vy > this.speed * 1.8) || (this.vx < -this.speed * 1.8 || this.vy < -this.speed * 1.8)) {
+                this.sprites[Player.SPRITEMAP.active].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.active].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            }
+            else {
+                this.sprites[Player.SPRITEMAP.still].rotation = this.rotation;
+                this.sprites[Player.SPRITEMAP.still].draw(ctx, this.toRect2().x, this.toRect2().y, this.toRect2().width, this.toRect2().height);
+            }
+            ;
         }
         ;
     }
@@ -782,7 +925,9 @@ class Player extends MovingEntity {
 }
 Player.SPRITEMAP = {
     still: 0,
-    active: 1
+    active: 1,
+    sh_still: 2,
+    sh_active: 3
 };
 ;
 class Collectable extends Rect {
@@ -809,7 +954,7 @@ class CollectableLetter extends Collectable {
         const name = possibleNames[Math.floor(Math.random() * possibleNames.length)];
         const possibleValues = Object.keys(player.possibleCollectableKeys[name]);
         const value = possibleValues[Math.floor(Math.random() * possibleValues.length)];
-        console.log(name, value);
+        //console.log(name, value);
         return new CollectableLetter(x, y, name, value, CollectableLetter.SPRITES[name][value]);
     }
     ;
@@ -830,8 +975,23 @@ CollectableLetter.SPRITES = {
         g: new Sprite("images/letters/shotgun-g.png", 256, 288, 1),
         u: new Sprite("images/letters/shotgun-u.png", 256, 288, 1),
         n: new Sprite("images/letters/shotgun-n.png", 256, 288, 1)
+    },
+    sheild: {
+        s: new Sprite("images/letters/shield-s.png", 256, 288, 1),
+        h: new Sprite("images/letters/shield-h.png", 256, 288, 1),
+        e: new Sprite("images/letters/shield-e.png", 256, 288, 1),
+        i: new Sprite("images/letters/shield-i.png", 256, 288, 1),
+        l: new Sprite("images/letters/shield-l.png", 256, 288, 1),
+        d: new Sprite("images/letters/shield-d.png", 256, 288, 1)
     }
 };
+;
+class CollectableFuel extends Collectable {
+    constructor(x, y) {
+        super(x, y, 33, 47, "fuel", "fuel", new Sprite("images/fuel/canister.png", 33, 47, 1));
+    }
+    ;
+}
 ;
 class DrawableText extends Rect {
     constructor(text, x, y, color, fontSize) {
@@ -841,11 +1001,21 @@ class DrawableText extends Rect {
         this.fontSize = fontSize;
     }
     ;
-    draw(ctx) {
-        ctx.textAlign = "left";
-        ctx.textBaseline = "top";
+    draw(ctx, drawCenter = false) {
+        if (drawCenter) {
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+        }
+        else {
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+        }
+        ;
         ctx.fillStyle = this.color;
-        ctx.font = `${this.fontSize}px "8BIT-WONDER"`;
+        ctx.strokeStyle = invertHex(this.color);
+        ctx.lineWidth = 3;
+        ctx.font = `${this.fontSize}px Dungeon-Swap`;
+        ctx.strokeText(this.text, this.x, this.y);
         ctx.fillText(this.text, this.x, this.y);
     }
     ;
@@ -862,8 +1032,8 @@ class Backdrop extends Rect {
     ;
     update() {
         this.x -= this.speed;
-        if (this.x <= -this.width) {
-            this.x = this.width * 2;
+        if (this.x + this.width <= 0) {
+            this.x = canvas.width;
         }
         ;
     }
@@ -896,20 +1066,30 @@ class UIElement extends Rect {
     ;
 }
 ;
+class Explosion extends Rect {
+    constructor(x, y) {
+        super(x, y, 50, 50);
+        this.sprite = new Sprite("images/explosion.png", 512, 575, 9, 0, 8);
+    }
+    ;
+    toRect() {
+        return new Rect(this.x - (this.width / 2), this.y - (this.height / 2), this.width, this.height);
+    }
+    ;
+    draw(ctx) {
+        this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+    }
+    ;
+}
+;
 const cameraRect = new Rect(0, 0, canvas.width, canvas.height - 60);
 const player = new Player();
-let asteroids = [
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create(),
-    Asteroid.create()
-]; // All the asteroids
+player.reset(cameraRect.width / 2, cameraRect.height / 2);
+let asteroids = []; // All the asteroids
 let explosions = [];
 const backdropStar = [
+    new Backdrop("images/bg.png", 1800, 600, 0.5, 0, 0),
+    new Backdrop("images/bg.png", 1800, 600, 0.5, 0, canvas.width),
     new Backdrop("images/stars.png", 800, 600, 1, 0, 0),
     new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width),
     new Backdrop("images/stars.png", 800, 600, 1, 0, canvas.width * 2),
@@ -1075,16 +1255,248 @@ const shotgunUpgradeUpdate = function () {
     }
     ;
 };
+const sheildUpgradeUpdate = function () {
+    let finalState = {
+        s: false,
+        h: false,
+        e: false,
+        i: false,
+        l: false,
+        d: false
+    };
+    for (let i = 0; i < player.collectables.sheild.length; i++) {
+        switch (player.collectables.sheild[i]) {
+            case "s":
+                finalState.s = true;
+                break;
+            case "h":
+                finalState.h = true;
+                break;
+            case "e":
+                finalState.e = true;
+                break;
+            case "i":
+                finalState.i = true;
+                break;
+            case "l":
+                finalState.l = true;
+                break;
+            case "d":
+                finalState.d = true;
+                break;
+            default:
+                break;
+        }
+        ;
+    }
+    ;
+    if (player.hasSheild()) {
+        this.drawFrames.push(13);
+    }
+    else {
+        this.drawFrames.push(0);
+        if (finalState.s) {
+            this.drawFrames.push(2);
+        }
+        else {
+            this.drawFrames.push(1);
+        }
+        ;
+        if (finalState.h) {
+            this.drawFrames.push(4);
+        }
+        else {
+            this.drawFrames.push(3);
+        }
+        ;
+        if (finalState.i) {
+            this.drawFrames.push(6);
+        }
+        else {
+            this.drawFrames.push(5);
+        }
+        ;
+        if (finalState.e) {
+            this.drawFrames.push(8);
+        }
+        else {
+            this.drawFrames.push(7);
+        }
+        ;
+        if (finalState.l) {
+            this.drawFrames.push(10);
+        }
+        else {
+            this.drawFrames.push(9);
+        }
+        ;
+        if (finalState.d) {
+            this.drawFrames.push(12);
+        }
+        else {
+            this.drawFrames.push(11);
+        }
+        ;
+    }
+    ;
+};
 const bottomBarUIUpdate = function () {
     this.drawFrames = [0];
 };
+const playerFuelUpdate = function () {
+    this.drawFrames = [3];
+    if (player.fuel < globalFPS * 15) {
+        this.drawFrames = [2];
+    }
+    ;
+    if (player.fuel < globalFPS * 10) {
+        this.drawFrames = [1];
+    }
+    if (player.fuel <= 0) {
+        this.drawFrames = [0];
+    }
+    ;
+};
+const alertUIUpdate = function () {
+    if (player.fuel < globalFPS * 10) {
+        this.drawFrames = [0];
+    }
+    else {
+        this.drawFrames = [1];
+    }
+    ;
+};
 const uiElements = [
-    new UIElement(new Sprite("images/bottombar.png", 960, 72, 1, 0), 0, 540, 800, 60, bottomBarUIUpdate),
+    new UIElement(new Sprite("images/bottombar.png", 6400, 480, 1, 0), 0, 540, 800, 60, bottomBarUIUpdate),
     new UIElement(new Sprite("images/upgrade/dash.png", 170, 50, 10), 15, 555, 102, 30, dashUpgradeUpdate),
-    new UIElement(new Sprite("images/upgrade/shotgun.png", 290, 50, 10), 124.5, 555, 174, 30, shotgunUpgradeUpdate)
+    new UIElement(new Sprite("images/upgrade/shotgun.png", 290, 50, 10), 124.5, 555, 174, 30, shotgunUpgradeUpdate),
+    new UIElement(new Sprite("images/upgrade/shield.png", 250, 50, 14), 306, 555, 150, 30, sheildUpgradeUpdate),
+    new UIElement(new Sprite("images/fuel/indi.png", 200, 50, 4), 463.5, 555, 120, 30, playerFuelUpdate),
+    new UIElement(new Sprite("images/alert.png", 110, 130, 2), 463.5 + 22, 555 - 100, 66, 78, alertUIUpdate)
 ];
 let collectables = [];
-function render() {
+let fuelCollectables = [];
+let gamestate = "title";
+let lastGameSprite = new Sprite("images/bg.png", 1800, 600, 1);
+class Button extends Rect {
+    constructor(x, y, width, height, sprite, onclick, hoverSprite) {
+        super(x, y, width, height);
+        this.sprite = sprite;
+        this.onclick = onclick;
+        if (hoverSprite) {
+            this.hsprite = hoverSprite;
+        }
+        else {
+            this.hsprite = this.sprite;
+        }
+        ;
+    }
+    ;
+    isHovering() {
+        return this.collidingWith(Mouse.toRect());
+    }
+    ;
+    isActive() {
+        return this.collidingWith(Mouse.toRect()) && Mouse.left;
+    }
+    ;
+    update() {
+        if (this.isActive())
+            this.onclick();
+    }
+    ;
+    draw(ctx) {
+        if (this.isHovering()) {
+            this.hsprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        }
+        else {
+            this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
+        }
+        ;
+    }
+    ;
+}
+;
+class Scene extends Rect {
+    constructor(buttons, drawableText, rects) {
+        super(0, 0, canvas.width, canvas.height);
+        this.buttons = [];
+        this.text = [];
+        this.rects = [];
+        this.buttons = buttons;
+        this.text = drawableText;
+        this.rects = rects;
+    }
+    ;
+    update() {
+        for (let i = 0; i < this.buttons.length; i++) {
+            this.buttons[i].update();
+        }
+        ;
+    }
+    ;
+    draw(ctx) {
+        lastGameSprite.draw(ctx, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < this.rects.length; i++) {
+            this.rects[i].draw(ctx);
+        }
+        ;
+        for (let i = 0; i < this.buttons.length; i++) {
+            this.buttons[i].draw(ctx);
+        }
+        ;
+        for (let i = 0; i < this.text.length; i++) {
+            this.text[i].draw(ctx, true);
+        }
+        ;
+    }
+    ;
+}
+;
+const bgm = new BGM("aud/rushhour.wav");
+const stranded = new BGM("aud/stranded.wav");
+const titleScene = new Scene([
+    new Button((canvas.width / 2) - 200, (canvas.height / 2) + 150, 100, 100, new Sprite("images/ship.png", 128, 128, 1), _ => {
+        asteroids = [];
+        player.reset(cameraRect.width / 2, cameraRect.height / 2);
+        collectables = [];
+        fuelCollectables = [];
+        explosions = [];
+        gamestate = "game";
+        bgm.play();
+    }, new Sprite("images/ship-s.png", 128, 128, 1)),
+    new Button((canvas.width / 2) + 100, (canvas.height / 2) + 150, 100, 100, new Sprite("images/credits.png", 128, 128, 1), _ => {
+        window.open("credits.html", "_blank");
+    }, new Sprite("images/credits.png", 128, 128, 1, 1))
+], [
+    new DrawableText("PLAY", (canvas.width / 2) - 150, (canvas.height / 2) + 270, "#ffffff", 16),
+    new DrawableText("CREDITS", (canvas.width / 2) + 150, (canvas.height / 2) + 270, "#ffffff", 16)
+], [
+    new Rect(canvas.width / 2 - 300, canvas.height / 2 - (97 / 2), 600, 97, new Sprite("images/logo.png", 815, 132, 1))
+]);
+const deathScene = new Scene([
+    new Button((canvas.width / 2) - 300, (canvas.height / 2) + 150, 100, 100, new Sprite("images/back.png", 128, 128, 1), _ => {
+        gamestate = "title";
+        stranded.stop();
+    }, new Sprite("images/back.png", 128, 128, 1, 1)),
+    new Button((canvas.width / 2) + 200, (canvas.height / 2) + 150, 100, 100, new Sprite("images/ship.png", 128, 128, 1), _ => {
+        asteroids = [];
+        player.reset(cameraRect.width / 2, cameraRect.height / 2);
+        collectables = [];
+        fuelCollectables = [];
+        explosions = [];
+        gamestate = "game";
+        stranded.stop();
+        bgm.play();
+    }, new Sprite("images/ship-s.png", 128, 128, 1))
+], [
+    new DrawableText("YOU WERE STRANDED", canvas.width / 2, canvas.height / 2, "#ffffff", 28),
+    new DrawableText("TITLE", (canvas.width / 2) - 250, (canvas.height / 2) + 270, "#ffffff", 16),
+    new DrawableText("PLAY AGAIN", (canvas.width / 2) + 250, (canvas.height / 2) + 270, "#ffffff", 16)
+], []);
+function renderGame() {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     for (let i = 0; i < backdropStar.length; i++) {
@@ -1103,10 +1515,22 @@ function render() {
         asteroids[i].draw(ctx);
     }
     ;
+    for (let i = 0; i < explosions.length; i++) { // Shit code dont ask
+        if (explosions[i] == null)
+            continue;
+        explosions[i].draw(ctx);
+    }
+    ;
     for (let i = 0; i < collectables.length; i++) {
         if (collectables[i] == null)
             continue;
         collectables[i].draw(ctx);
+    }
+    ;
+    for (let i = 0; i < fuelCollectables.length; i++) {
+        if (fuelCollectables[i] == null)
+            continue;
+        fuelCollectables[i].draw(ctx);
     }
     ;
     player.draw(ctx);
@@ -1116,13 +1540,27 @@ function render() {
         uiElements[i].draw(ctx);
     }
     ;
-    new DrawableText(`SCORE ${player.score.toString()}  HI SCORE ${player.highScore.toString()}  LEVEL ${player.level + 1}`, 10, 10, "#ffffff", 18).draw(ctx);
+    new DrawableText(`SCORE  ${player.score.toString()}    HI SCORE  ${player.highScore.toString()}    LEVEL  ${player.getLevel() + 1}`, 10, 10, "#ffffff", 18).draw(ctx);
+}
+;
+function render() {
+    if (gamestate == "game") {
+        renderGame();
+    }
+    else if (gamestate == "death") {
+        deathScene.draw(ctx);
+    }
+    else if (gamestate == "title") {
+        titleScene.draw(ctx);
+    }
+    ;
     requestAnimationFrame(render);
 }
 ;
 render();
 let spawnAsteroidCounter = 0;
-function update() {
+const explosionSFX = new SFX("aud/explosion.wav");
+function updateGame() {
     player.prevScore = player.score;
     for (let i = 0; i < backdropStar.length; i++) {
         backdropStar[i].update();
@@ -1141,6 +1579,8 @@ function update() {
             if (player.projectiles[k] == null)
                 continue;
             if (asteroids[i].collidingWith(player.projectiles[k])) {
+                explosionSFX.play();
+                explosions.push(new Explosion(asteroids[i].x, asteroids[i].y));
                 if (asteroids[i].mitosisType() == "more") {
                     const newAst = asteroids[i].mitosisAsteroid(player.projectiles[k].angle);
                     newAst.forEach((e) => {
@@ -1153,12 +1593,21 @@ function update() {
                 }
                 else {
                     const newAst = asteroids[i].mitosisCollectable();
-                    newAst.forEach((e) => {
-                        collectables.push(e);
-                    });
+                    if (newAst.type == "letter") {
+                        newAst.col.forEach((e) => {
+                            collectables.push(e);
+                        });
+                        player.score += 50;
+                    }
+                    else if (newAst.type == "fuel") {
+                        newAst.col.forEach((e) => {
+                            fuelCollectables.push(e);
+                        });
+                        player.score += 50;
+                    }
+                    ;
                     delete asteroids[i];
                     delete player.projectiles[k];
-                    player.score += 50;
                     continue;
                 }
                 ;
@@ -1167,18 +1616,18 @@ function update() {
         }
         ;
         if (player.collidingWith(asteroids[i].toRect())) {
-            asteroids = [
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create(),
-                Asteroid.create()
-            ];
-            player.reset(cameraRect.width / 2, cameraRect.height / 2);
-            collectables = [];
+            if (player.hasSheild()) {
+                player.collectables.sheild = [];
+                explosions.push(new Explosion(asteroids[i].x, asteroids[i].y));
+                delete asteroids[i];
+            }
+            else {
+                gamestate = "death";
+                bgm.stop();
+                stranded.play();
+                lastGameSprite = new Sprite(canvas.toDataURL(), canvas.width, canvas.height, 1);
+            }
+            ;
         }
         ;
     }
@@ -1195,13 +1644,55 @@ function update() {
         ;
     }
     ;
+    for (let i = 0; i < fuelCollectables.length; i++) {
+        if (fuelCollectables[i] == null)
+            continue;
+        if (fuelCollectables[i].collidingWith(player.toRect())) {
+            player.fuel = player.maxFuel;
+            delete fuelCollectables[i];
+            player.score += 150;
+            continue;
+        }
+        ;
+    }
+    ;
+    if (player.fuel <= 0) {
+        gamestate = "death";
+        bgm.stop();
+        stranded.play();
+        lastGameSprite = new Sprite(canvas.toDataURL(), canvas.width, canvas.height, 1);
+    }
+    ;
+    for (let i = 0; i < explosions.length; i++) {
+        if (explosions[i] == null)
+            continue;
+        if (explosions[i].sprite.currentFrame == explosions[i].sprite.frameCount - 1) {
+            delete explosions[i];
+        }
+        ;
+    }
+    ;
     player.update();
     spawnAsteroidCounter++;
-    if (spawnAsteroidCounter % (30 * 4) - (player.level * 10) == 0)
+    let remainderThing = (globalFPS * 4) - (Math.floor(player.score / player.levelInc) * 10);
+    if (remainderThing > globalFPS / 2)
+        remainderThing = globalFPS;
+    if (spawnAsteroidCounter % remainderThing == 0)
         asteroids.push(Asteroid.create());
 }
 ;
-setInterval(update, fpsToMilliseconds(globalFPS));
+setInterval(_ => {
+    if (gamestate == "game") {
+        updateGame();
+    }
+    else if (gamestate == "title") {
+        titleScene.update();
+    }
+    else if (gamestate == "death") {
+        deathScene.update();
+    }
+    ;
+}, fpsToMilliseconds(globalFPS));
 rsjs(canvas, "full", {
     margin_height: 0,
     margin_width: 0
