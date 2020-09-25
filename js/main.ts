@@ -158,7 +158,7 @@ function weightedRandom(weight: number[], num: number[]): number {
     };
 };
 function isMobile(): bool {
-    return window.matchMedia("only screen and (max-width: 760px)").matches;
+    return false;
 };
 function invertHex(hex: string): string {
     return (Number(`0x1${hex}`) ^ 0xFFFFFF).toString(16).substr(1).toUpperCase()
