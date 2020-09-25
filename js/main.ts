@@ -607,7 +607,9 @@ class Player extends MovingEntity {
             d: null
         }
     };
-    public coins: number = 0;
+    public packages: number = 0;
+    public packagesDelivered: number = 0;
+    public readonly maxPackages: number = 5;
     public sprites: Sprite[] = [];
     public projectiles: Projectile[] = [];
     public readonly speed: number = 3;
@@ -1138,6 +1140,43 @@ class Explosion extends Rect {
     };
 };
 
+type PackagePickupDropoffTpye = "drop" | "pick";
+class PackagePickupDropoff extends Rect {
+    public type: PackagePickupDropoffTpye;
+    public movementSpeeed: number;
+    public alreadyUsed: bool;;
+
+    public static create(): PackagePickupDropoff {
+        if (player.packages > 0) {
+            return new PackagePickupDropoff("drop");
+        } else {
+            return new PackagePickupDropoff("pick");
+        };
+    };
+
+    constructor(type: PackagePickupDropoffTpye) {
+        const ceiling: bool = Math.random() < 0.5;
+        if (type == "drop") {
+            super(canvas.width-1, (ceiling) ? 0 : cameraRect.height-80, 60, 80, new Sprite("images/packagepd.png", 640, 480, 19, 0, 5));
+            this.sprite.rotation = (ceiling) ? 90 : 270;
+        } else {
+            super(canvas.width-1, (ceiling) ? 0 : cameraRect.height-80, 60, 80, new Sprite("images/packagepd.png", 640, 480, 19, 0, 5));
+            this.sprite.rotation = (ceiling) ? 90 : 270;
+        };
+        this.type = type;
+        this.movementSpeeed = 1;
+        this.alreadyUsed = false;
+    };
+
+    public toRect(): Rect {
+        return new Rect(this.x - (this.width/2), this.y - (this.height/2), this.width, this.height);
+    };
+
+    public update(): void {
+        this.x -= this.movementSpeeed;
+    };
+};
+
 const cameraRect: Rect = new Rect(0, 0, canvas.width, canvas.height - 60);
 
 const player = new Player();
@@ -1396,59 +1435,16 @@ let gamestate: GameState = "title";
 let lastGameSprite: Sprite = new Sprite("images/bg.png", 1800, 600, 1);
 
 
-class Button extends Rect {
-    public sprite: Sprite;
-    public hsprite: Sprite;
-    public onclick: Function;
-
-    constructor(x: number, y: number, width: number, height: number, sprite: Sprite, onclick: Function, hoverSprite?: Sprite) {
-        super(x, y, width, height);
-        this.sprite = sprite;
-        this.onclick = onclick;
-        if (hoverSprite) {
-            this.hsprite = hoverSprite;
-        } else {
-            this.hsprite = this.sprite;
-        };
-    };
-
-    public isHovering(): bool {
-        return this.collidingWith(Mouse.toRect());
-    };
-
-    public isActive(): bool {
-        return this.collidingWith(Mouse.toRect()) && Mouse.left;
-    };
-
-    public update(): void {
-        if (this.isActive()) this.onclick();
-    };
-
-    public draw(ctx: CanvasRenderingContext2D): void {
-        if (this.isHovering()) {
-            this.hsprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height);
-        } else {
-            this.sprite.draw(ctx, this.toRect().x, this.toRect().y, this.toRect().width, this.toRect().height)
-        };
-    };
-};
-
 class Scene extends Rect {
-    public buttons: Button[] = [];
+    public buttons: HTMLDivElement[] = [];
     public text: DrawableText[] = [];
     public rects: Rect[] = [];
 
-    constructor(buttons: Button[], drawableText: DrawableText[], rects: Rect[]) {
+    constructor(buttons: HTMLDivElement[], drawableText: DrawableText[], rects: Rect[]) {
         super(0, 0, canvas.width, canvas.height);
         this.buttons = buttons;
         this.text = drawableText;
         this.rects = rects;
-    };
-
-    public update() {
-        for (let i: number = 0; i < this.buttons.length; i++) {
-            this.buttons[i].update();
-        };
     };
 
     public draw(ctx: CanvasRenderingContext2D) {
@@ -1457,9 +1453,6 @@ class Scene extends Rect {
         ctx.fillRect(0, 0, canvas.width, canvas.height)
         for (let i: number = 0; i < this.rects.length; i++) {
             this.rects[i].draw(ctx);
-        };
-        for (let i: number = 0; i < this.buttons.length; i++) {
-            this.buttons[i].draw(ctx);
         };
         for (let i: number = 0; i < this.text.length; i++) {
             this.text[i].draw(ctx, true);
@@ -1472,48 +1465,59 @@ const bgm: BGM = new BGM("aud/rushhour.wav");
 const stranded: BGM = new BGM("aud/stranded.wav");
 
 
+function startGame() {
+    player.reset(cameraRect.width/2, cameraRect.height/2);
+    asteroids = [];
+    collectables = [];
+    fuelCollectables = [];
+    pickupdropoff = [];
+    spawnAsteroidCounter = 0;
+    stranded.stop();
+    bgm.play();
+    gamestate = "game";
+    titleScene.buttons.forEach((e: HTMLDivElement) => {
+        e.style.display = "none";
+    });
+    deathScene.buttons.forEach((e: HTMLDivElement) => {
+        e.style.display = "none";
+    });
+};
+
+function showTitle() {
+    gamestate = "title";
+    stranded.stop();
+    bgm.stop();
+    for (let i: number = 0; i < titleScene.buttons.length; i++) {
+        titleScene.buttons[i].style.display = "block";
+    };
+    for (let i: number = 0; i < deathScene.buttons.length; i++) {
+        deathScene.buttons[i].style.display = "none";
+    };
+};
+
+function showDeath() {
+    bgm.stop();
+    stranded.play();
+    gamestate = "death";
+    for (let i: number = 0; i < titleScene.buttons.length; i++) {
+        titleScene.buttons[i].style.display = "none";
+    };
+    for (let i: number = 0; i < deathScene.buttons.length; i++) {
+        deathScene.buttons[i].style.display = "block";
+    };
+};
+
 const titleScene: Scene = new Scene([
-    new Button((canvas.width/2)-200, (canvas.height/2)+150, 100, 100, new Sprite("images/ship.png", 128, 128, 1), _ => {
-        asteroids = [];
-        player.reset(cameraRect.width/2, cameraRect.height/2);
-        collectables = [];
-        fuelCollectables = [];
-        explosions = [];
-        gamestate = "game";
-        bgm.play();
-    }, new Sprite("images/ship-s.png", 128, 128, 1)),
-    new Button((canvas.width/2)+100, (canvas.height/2)+150, 100, 100, new Sprite("images/credits.png", 128, 128, 1), _ => {
-        window.open("credits.html", "_blank");
-    }, new Sprite("images/credits.png", 128, 128, 1, 1))
-],[
-    new DrawableText("PLAY", (canvas.width/2)-150, (canvas.height/2)+270, "#ffffff", 16),
-    new DrawableText("CREDITS", (canvas.width/2)+150, (canvas.height/2)+270, "#ffffff", 16)
-],[
+    <HTMLDivElement>document.querySelectorAll(".titleBtns")[0]
+],[],[
     new Rect(canvas.width/2 - 300, canvas.height/2 - (97/2), 600, 97, new Sprite("images/logo.png", 815, 132, 1))
 ]);
 
 const deathScene: Scene = new Scene([
-    new Button((canvas.width/2)-300, (canvas.height/2)+150, 100, 100, new Sprite("images/back.png", 128, 128, 1), _ => {
-        gamestate = "title";
-        stranded.stop();
-    }, new Sprite("images/back.png", 128, 128, 1, 1)),
-    new Button((canvas.width/2)+200, (canvas.height/2)+150, 100, 100, new Sprite("images/ship.png", 128, 128, 1), _ => {
-        asteroids = [];
-        player.reset(cameraRect.width/2, cameraRect.height/2);
-        collectables = [];
-        fuelCollectables = [];
-        explosions = [];
-        gamestate = "game";
-        stranded.stop();
-        bgm.play();
-    }, new Sprite("images/ship-s.png", 128, 128, 1))
+    <HTMLDivElement>document.querySelectorAll(".deathBtns")[0]
 ],[
-    new DrawableText("YOU WERE STRANDED", canvas.width/2, canvas.height/2, "#ffffff", 28),
-    new DrawableText("TITLE", (canvas.width/2)-250, (canvas.height/2)+270, "#ffffff", 16),
-    new DrawableText("PLAY AGAIN", (canvas.width/2)+250, (canvas.height/2)+270, "#ffffff", 16)
-],[
-    
-]);
+    new DrawableText("YOU  WERE  STRANDED", canvas.width/2, canvas.height/2, "#ffffff", 28)
+],[]);
 
 function renderGame(): void { // Main render loop
     ctx.fillStyle = "#000000";
@@ -1524,6 +1528,10 @@ function renderGame(): void { // Main render loop
     for (let i: number = 0; i < player.projectiles.length; i++) {
         if (player.projectiles[i] == null) continue;
         player.projectiles[i].draw(ctx);
+    };
+    for (let i: number = 0; i < pickupdropoff.length; i++) {
+        if (pickupdropoff == null) continue;
+        pickupdropoff[i].draw(ctx);
     };
     for (let i: number = 0; i < asteroids.length; i++) {
         if (asteroids[i] == null) continue;
@@ -1546,7 +1554,7 @@ function renderGame(): void { // Main render loop
         if (uiElements[i] == null) continue;
         uiElements[i].draw(ctx);
     };
-    new DrawableText(`SCORE  ${player.score.toString()}    HI SCORE  ${player.highScore.toString()}    LEVEL  ${player.getLevel() + 1}`, 10, 10, "#ffffff", 18).draw(ctx);  
+    new DrawableText(`SCORE  ${player.score.toString()}    HI SCORE  ${player.highScore.toString()}    LEVEL  ${player.getLevel() + 1}    ${player.packages}  PACKAGE(S)`, 10, 10, "#ffffff", 18).draw(ctx);  
 };
 
 
@@ -1565,6 +1573,8 @@ render();
 let spawnAsteroidCounter: number = 0;
 
 const explosionSFX: SFX = new SFX("aud/explosion.wav");
+
+let pickupdropoff: PackagePickupDropoff[] = [];
 
 function updateGame(): void { // Main update loop
     player.prevScore = player.score;
@@ -1623,9 +1633,7 @@ function updateGame(): void { // Main update loop
                 explosions.push(new Explosion(asteroids[i].x, asteroids[i].y));
                 delete asteroids[i];
             } else {
-                gamestate = "death";
-                bgm.stop();
-                stranded.play();
+                showDeath();
                 lastGameSprite = new Sprite(canvas.toDataURL(), canvas.width, canvas.height, 1);
             };
         };
@@ -1652,10 +1660,29 @@ function updateGame(): void { // Main update loop
             continue;
         };
     };
+    for (let i: number = 0; i < pickupdropoff.length; i++) {
+        if (pickupdropoff == null) continue;
+        pickupdropoff[i].update();
+        if (!cameraRect.collidingWith(pickupdropoff[i])) {
+            delete pickupdropoff[i];
+            continue;
+        };
+        if (player.collidingWith(pickupdropoff[i])) {
+            if (!pickupdropoff[i].alreadyUsed) {
+                if (pickupdropoff[i].type == "pick") {
+                    player.packages = player.maxPackages;
+                    player.score += 250;
+                } else {
+                    player.packagesDelivered += player.packages;
+                    player.packages = 0;
+                    player.score += 1000;
+                };
+                pickupdropoff[i].alreadyUsed = true;
+            };
+        };
+    };
     if (player.fuel <= 0) {
-        gamestate = "death";
-        bgm.stop();
-        stranded.play();
+        showDeath();
         lastGameSprite = new Sprite(canvas.toDataURL(), canvas.width, canvas.height, 1);
     };
     for (let i: number = 0; i < explosions.length; i++) {
@@ -1670,15 +1697,12 @@ function updateGame(): void { // Main update loop
     let remainderThing: number = (globalFPS*4)-(Math.floor(player.score/player.levelInc)*10);
     if (remainderThing > globalFPS / 2) remainderThing = globalFPS;
     if (spawnAsteroidCounter % remainderThing == 0) asteroids.push(Asteroid.create());
+    if (spawnAsteroidCounter % (globalFPS * 30) == 0) pickupdropoff.push(PackagePickupDropoff.create());
 };
 
 setInterval(_ => {
     if (gamestate == "game") {
         updateGame();
-    } else if (gamestate == "title") {
-        titleScene.update();
-    } else if (gamestate == "death") {
-        deathScene.update();
     };
 }, fpsToMilliseconds(globalFPS));
 

@@ -15,6 +15,16 @@
 </head>
 <body>
     <canvas id="canvas" width="800" height="600"></canvas>
+    <div class="buttons">
+        <div class="titleBtns">
+            <button id="plybtn" onclick="startGame()">PLAY</button>
+            <button id="cditbtn" onclick="window.open(`credits.html`, `_blank`)">CREDITS</button>
+        </div>
+        <div class="deathBtns" style="display: none;">
+            <button id="rtybtn" onclick="startGame()">RETRY</button>
+            <button id="tlebtn" onclick="showTitle()">TITLE</button>
+        </div>
+    </div>
     <div id="mobControls" style="display: none;">
         <div id="joystickDiv"></div>
         <div class="buttons">

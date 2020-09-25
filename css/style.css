@@ -1,7 +1,7 @@
 * {
     margin: 0;
     padding: 0;
-    font-family: "8BIT-WONDER";
+    font-family: "Dungeon-Swap";
 }
 h3 {
     font-size: 18px;
@@ -17,6 +17,7 @@ canvas#canvas {
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
+    z-index: 0;
 }
 div.devMenu {
     position: fixed;
@@ -57,4 +58,42 @@ div#mobControls > .buttons:last-child {
     -khtml-user-select: none;
     -moz-user-select: none;
     -o-user-select: none;
+}
+.buttons {
+    z-index: 1;
+    position: fixed;
+    left: 50%;
+    bottom: 10%;
+    transform: translate(-50%, -50%);
+    float: left;
+}
+.titleBtns {
+    float: left;
+}
+.titleBtns:last-child {
+    margin-left: 30px;
+}
+.deathBtns {
+    float: left;
+}
+.deathBtns:last-child {
+    margin-left: 30px;
+}
+button {
+    padding: 15px;
+    font-size: 25px;
+    background-color: #3f005a;
+    border-radius: none;
+    color: white;
+    border: none;
+    transition: background-color 0.1s;
+    outline: none;
+}
+button:hover {
+    padding: 15px;
+    font-size: 25px;
+    background-color: #4b1846;
+    border-radius: none;
+    color: white;
+    border: none;
 }
