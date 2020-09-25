@@ -1530,7 +1530,7 @@ function renderGame(): void { // Main render loop
         player.projectiles[i].draw(ctx);
     };
     for (let i: number = 0; i < pickupdropoff.length; i++) {
-        if (pickupdropoff == null) continue;
+        if (pickupdropoff[i] == null) continue;
         pickupdropoff[i].draw(ctx);
     };
     for (let i: number = 0; i < asteroids.length; i++) {
@@ -1661,7 +1661,7 @@ function updateGame(): void { // Main update loop
         };
     };
     for (let i: number = 0; i < pickupdropoff.length; i++) {
-        if (pickupdropoff == null) continue;
+        if (pickupdropoff[i] == null) continue;
         pickupdropoff[i].update();
         if (!cameraRect.collidingWith(pickupdropoff[i])) {
             delete pickupdropoff[i];

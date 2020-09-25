@@ -1517,7 +1517,7 @@ function renderGame() {
     }
     ;
     for (let i = 0; i < pickupdropoff.length; i++) {
-        if (pickupdropoff == null)
+        if (pickupdropoff[i] == null)
             continue;
         pickupdropoff[i].draw(ctx);
     }
@@ -1669,7 +1669,7 @@ function updateGame() {
     }
     ;
     for (let i = 0; i < pickupdropoff.length; i++) {
-        if (pickupdropoff == null)
+        if (pickupdropoff[i] == null)
             continue;
         pickupdropoff[i].update();
         if (!cameraRect.collidingWith(pickupdropoff[i])) {
